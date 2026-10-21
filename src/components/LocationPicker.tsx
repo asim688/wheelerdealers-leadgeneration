@@ -50,6 +50,7 @@ export default function LocationPicker({
   useEffect(() => {
     if (mode !== "loading") return;
     let cancelled = false;
+    console.log("hello")
     loadGoogleMaps().then((g) => {
       if (cancelled) return;
       if (!g || !inputRef.current) {
