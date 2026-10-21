@@ -1,0 +1,38 @@
+{
+  "name": "thewheelerdealers",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "postinstall": "prisma generate",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "node prisma/seed.mjs",
+    "market:refresh": "curl -fsS -X POST -H \"Authorization: Bearer $CRON_SECRET\" http://localhost:3000/api/cron/refresh-market"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "@prisma/client": "^6.0.0",
+    "@vercel/blob": "^2.6.1",
+    "firebase": "^12.19.0",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "playwright": "^1.61.1",
+    "postcss": "^8",
+    "prisma": "^6.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5"
+  }
+}

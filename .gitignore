@@ -1,0 +1,37 @@
+# dependencies
+/node_modules
+
+# python data-tooling virtualenv + data-loading scripts
+.venv/
+/scripts/
+
+# next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+
+# env files (never commit real secrets; keep the example tracked)
+.env
+.env.*
+!.env.example
+.env*.local
+
+# database (SQLite dev)
+*.db
+*.db-journal
+prisma/dev.db
+prisma/dev.db-journal
+
+# misc
+*.log
+.DS_Store
+*.pem
+.vercel
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# Dev-only inspection photo uploads (production uses Vercel Blob)
+/public/uploads
+public/uploads/_preview/

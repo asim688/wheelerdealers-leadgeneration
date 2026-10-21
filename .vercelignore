@@ -1,0 +1,16 @@
+# Keep the Vercel deployment lean — none of these are needed at runtime.
+# (Applies to `vercel` CLI deploys; Git deploys only include committed files.)
+
+# Python data-tooling virtualenv
+.venv
+
+# Data-loading scripts + raw datasets (seed the DB separately)
+scripts
+*.xlsx
+*.csv
+*.pdf
+
+# Local-only infra / backups
+docker-compose.yml
+.env.bak.*
+*.log

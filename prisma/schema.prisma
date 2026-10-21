@@ -1,0 +1,448 @@
+// Prisma schema — The Wheeler Dealers
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // PostgreSQL for both local (via docker-compose) and production. Set
+  // DATABASE_URL in the environment. See docker-compose.yml for local dev.
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// A captured lead from the AI search flows (Sell / Trade / Buy / Dealer).
+model Lead {
+  id          String   @id @default(cuid())
+  intent      String   @default("sell") // sell | buy | trade | dealer
+
+  // Vehicle details (collected by the AI)
+  make        String?
+  model       String?
+  trim        String?
+  year        Int?
+  mileage     Int?
+  condition   String?
+  vin         String? // chassis number, read from the Mulkiya
+  engineNo    String? // engine number, read from the Mulkiya
+
+  // Extended vehicle questionnaire (Sell flow)
+  accident        String? // No accident | Minor accident | Major accident | Structural damage | Not sure
+  serviceHistory  String? // Agency | Authorized garage | Local garage | Self-maintained | No records
+  previousOwners  Int?
+  warranty        String? // Yes | No
+  keys            String? // Two keys | One key | No keys
+  modifications   String? // Yes | No
+
+  // Uploaded inspection report (AI-analysed before pricing)
+  hasInspectionReport     Boolean @default(false)
+  inspectionReportScore   Float?  // overall rating 0-10
+  inspectionReportSource  String? // provider name (e.g. dubizzle) or generic
+  inspectionReportSummary String? // one-line AI condition summary
+
+  // Contact details
+  name        String?
+  mobile      String?
+  email       String?
+
+  // AI valuation result
+  estimateMin Int?
+  estimateMax Int?
+  currency    String?
+
+  // Free-inspection booking (Sell journey steps 9-10)
+  inspectionType String?   // home | branch | expert-chat
+  inspectionSlot String?   // Today | Tomorrow | This Weekend | <custom date>
+  inspectionAt   DateTime? // when the booking was made
+
+  createdAt   DateTime @default(now())
+
+  // A sell/trade lead may be offered to dealers via an auction.
+  auction     Auction?
+
+  @@index([intent])
+  @@index([createdAt])
+}
+
+/// A car in the dealer inventory, matched against buyers in the Buy/Trade flows.
+model Car {
+  id           String   @id @default(cuid())
+  make         String
+  model        String
+  year         Int
+  price        Int
+  mileage      Int
+  bodyType     String // sedan | suv | hatchback | coupe | truck | van | convertible | wagon
+  fuelType     String // petrol | diesel | hybrid | electric
+  transmission String // automatic | manual
+  color        String?
+  seats        Int?
+  description  String?
+  imageUrl     String?
+  sold         Boolean  @default(false)
+
+  createdAt    DateTime @default(now())
+
+  @@index([make])
+  @@index([bodyType])
+  @@index([price])
+  @@index([sold])
+}
+
+/// A registered car dealer who can bid on seller leads in the Dealer Core auction.
+model Dealer {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  approved     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  bids         Bid[]
+}
+
+/// An auction listing a seller's lead to dealers. Dealers bid; the platform
+/// takes the winning offer back to the seller to finalise.
+model Auction {
+  id        String    @id @default(cuid())
+  leadId    String    @unique
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  status    String    @default("open") // open | closed
+  endsAt    DateTime?
+  winningBidId String?
+  createdAt DateTime  @default(now())
+
+  bids      Bid[]
+
+  @@index([status])
+}
+
+/// A single dealer bid on an auction.
+model Bid {
+  id        String   @id @default(cuid())
+  auctionId String
+  auction   Auction  @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  dealerId  String
+  dealer    Dealer   @relation(fields: [dealerId], references: [id], onDelete: Cascade)
+  amount    Int
+  createdAt DateTime @default(now())
+
+  @@index([auctionId])
+  @@index([dealerId])
+}
+
+/// Cached market price data for a make/model/year, aggregated from external
+/// classified platforms. Refreshed at most once per ~3 months (see
+/// src/lib/marketData.ts) so we never re-fetch on every valuation request.
+model MarketPrice {
+  id          String   @id @default(cuid())
+  make        String
+  model       String
+  year        Int
+
+  // Aggregated statistics from the sampled listings (display currency).
+  sampleCount Int      @default(0)
+  avgPrice    Int
+  minPrice    Int
+  maxPrice    Int
+  currency    String
+
+  source      String   @default("aggregate") // where the samples came from
+  fetchedAt   DateTime @default(now())        // last refresh timestamp
+
+  // One cached row per vehicle key.
+  @@unique([make, model, year])
+  @@index([fetchedAt])
+}
+
+/// A single raw car-for-sale listing scraped from the UAE classifieds
+/// (Dubizzle / BuyAnyCar / YallaMotor). This is the full dataset the Sell-flow
+/// valuation searches against after a VIN is decoded. Aggregated into
+/// MarketPrice for fast make/model/year lookups.
+model CarListing {
+  id           String   @id @default(cuid())
+  title        String?
+  make         String
+  model        String?
+  trim         String?
+  year         Int
+  mileageKm    Int?
+  specs        String?
+  transmission String?
+  priceAed     Int
+  location     String?
+  dealer       String?
+  source       String   @default("aggregate") // dubizzle | buyanycar | yallamotor
+
+  createdAt    DateTime @default(now())
+
+  @@index([make])
+  @@index([make, model])
+  @@index([make, model, year])
+  @@index([priceAed])
+}
+
+// ---------------------------------------------------------------------------
+// VEHICLE INSPECTION MODULE
+// ---------------------------------------------------------------------------
+
+/// A third-party inspection company registered on the marketplace. Companies
+/// self-register, are approved by admin, then compete to accept available
+/// inspection jobs (first-accept-wins). Kept under the historical "Inspector"
+/// name to avoid a disruptive rename across the codebase.
+/// An inspection company (the "parent" tenant). Registers on the platform,
+/// is approved by Super Admin, accepts live jobs and assigns them to its own
+/// inspectors ("children"). Company admin logs in with email + password.
+model InspectionCompany {
+  id           String   @id @default(cuid())
+  name         String   // company display name
+  details      String?  // free-text company description
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  // Location (registration: current location or picked on a map)
+  address String?
+  city    String?
+  emirate String?
+  lat     Float?
+  lng     Float?
+
+  // Point of Contact — the person we call/WhatsApp when a job goes live
+  pocName   String?
+  pocMobile String?
+  pocEmail  String?
+
+  // Business profile
+  tradeLicense String?
+  areas        String? // comma-separated emirates/cities covered
+  services     String? // comma-separated inspection services offered
+
+  // Payout / banking details used to settle earned commissions
+  bankAccountTitle  String?
+  bankAccountNumber String?
+  bankIban          String?
+  bankName          String?
+  bankBranch        String?
+
+  // Admin approval workflow: pending | approved | suspended
+  approvalStatus String @default("pending")
+
+  inspectors Inspector[]
+  jobs       InspectionJob[] @relation("CompanyJobs")
+
+  @@index([approvalStatus])
+}
+
+model Inspector {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  // Parent company (multi-tenant). Legacy standalone accounts have null.
+  companyId String?
+  company   InspectionCompany? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  // Legacy company-profile fields (kept for pre-multi-tenant rows)
+  contactPerson String?
+  tradeLicense  String?
+  areas         String? // comma-separated emirates/cities covered
+  services      String? // comma-separated inspection services offered
+  bankName     String?
+  bankIban     String?
+
+  // Admin approval workflow: pending | approved | suspended
+  approvalStatus String @default("approved")
+
+  jobs         InspectionJob[]
+
+  @@index([approvalStatus])
+  @@index([companyId])
+}
+
+/// A customer account. Login is required before booking (mobile OTP).
+model Customer {
+  id        String   @id @default(cuid())
+  mobile    String   @unique
+  name      String?
+  email     String?
+  createdAt DateTime @default(now())
+  lastLogin DateTime?
+
+  jobs InspectionJob[]
+}
+
+/// One-time passwords for customer mobile login. Verified codes are deleted;
+/// expired ones ignored.
+model OtpCode {
+  id        String   @id @default(cuid())
+  mobile    String
+  codeHash  String   // scrypt hash of the 6-digit code
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([mobile])
+  @@index([expiresAt])
+}
+
+/// Simple key-value store for admin-configurable platform settings
+/// (e.g. inspection customer price, partner payout amount).
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// A customer-booked vehicle inspection job. Created by the public booking
+/// wizard, assigned to an inspector by admin, then carried out and reported.
+model InspectionJob {
+  id        String   @id @default(cuid())
+  jobCode   String   @unique // human-friendly, e.g. WD-260722-0015
+  // Marketplace lifecycle:
+  // payment_pending → available → accepted → in_progress → report_submitted → completed
+  // (cancelled possible at any point; legacy values open/assigned map to available/accepted)
+  status    String   @default("payment_pending")
+
+  // Public, unguessable token for the customer-facing report link.
+  reportToken String? @unique
+
+  // Customer (step 1)
+  customerName   String
+  customerMobile String
+  customerEmail  String
+
+  // Vehicle (step 2 — VIN decode)
+  vin          String?
+  make         String?
+  model        String?
+  year         Int?
+  bodyClass    String?
+  trim         String?
+  transmission String?
+  fuelType     String?
+
+  // Location (step 3)
+  address String?
+  city    String?
+  emirate String?
+  lat     Float?
+  lng     Float?
+
+  // Schedule (step 4)
+  scheduledAt   DateTime?
+  scheduledSlot String? // e.g. "10:00 AM"
+
+  // Commercial
+  fee      Int?
+  currency String @default("AED")
+
+  // Online payment (provider-ready Stripe; auto-paid when no keys configured)
+  paymentStatus   String    @default("pending") // pending | paid | waived
+  paymentProvider String?   // stripe | dev-auto | manual
+  paymentRef      String?   // e.g. Stripe checkout session id
+  paidAt          DateTime?
+
+  // Partner economics — snapshotted at acceptance so later admin pricing
+  // changes don't rewrite historical earnings. Commission = fee - partnerPayout.
+  partnerPayout Int?
+
+  // Customer account that booked this job (OTP login). Legacy jobs null.
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  // Marketplace dispatch (Uber-style): the company that accepted the job,
+  // companies banned from re-accepting after cancelling, and the live-window
+  // expiry after which the job is no longer offered.
+  acceptedByCompanyId String?
+  acceptedByCompany   InspectionCompany? @relation("CompanyJobs", fields: [acceptedByCompanyId], references: [id], onDelete: SetNull)
+  excludedCompanyIds  String? // comma-separated company ids that cancelled this job
+  expiresAt           DateTime?
+
+  // Assignment (marketplace accept, or admin override) + lifecycle
+  assignedInspectorId String?
+  inspector           Inspector? @relation(fields: [assignedInspectorId], references: [id], onDelete: SetNull)
+  assignedAt          DateTime?
+  acceptedAt          DateTime?
+  startedAt           DateTime?
+  reportSubmittedAt   DateTime?
+  completedAt         DateTime?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items  InspectionItem[]
+  photos InspectionPhoto[]
+  report InspectionReport?
+
+  @@index([status])
+  @@index([assignedInspectorId])
+  @@index([acceptedByCompanyId])
+  @@index([customerId])
+  @@index([scheduledAt])
+  @@index([createdAt])
+}
+
+/// A single inspection point within a job (e.g. "Front bumper" under Exterior).
+/// Materialised from the checklist template when the inspector starts the job,
+/// so every point has a stable unique id for answers and photos.
+model InspectionItem {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  section   String   // e.g. "Exterior"
+  itemKey   String   // stable key from the template (e.g. "exterior.front_bumper")
+  label     String   // human label
+  condition String?  // Good | Fair | Poor | Fail | N/A
+  comments  String?
+  order     Int      @default(0)
+
+  photos    InspectionPhoto[]
+
+  @@unique([jobId, itemKey])
+  @@index([jobId])
+}
+
+/// A photo attached to a job (optionally to a specific inspection item).
+model InspectionPhoto {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       InspectionJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  itemId    String?
+  item      InspectionItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  url       String
+  caption   String?
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([itemId])
+}
+
+/// The generated report for a completed inspection.
+model InspectionReport {
+  id              String   @id @default(cuid())
+  jobId           String   @unique
+  job             InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  summary         String?
+  recommendations String?
+  overallScore    Float?
+  // Observed at inspection time (shown in the customer report's Vehicle Summary)
+  odometerKm      Int?
+  odometerStatus  String?  // Genuine | Suspected tampering | Not verified
+  exteriorColor   String?
+  regionalSpecs   String?  // GCC | American | Japanese | European | Other
+  keysCount       Int?
+  spareTyre       String?  // Available | Not available | Repair kit
+  verdict         String?  // Recommended | Recommended with repairs | Not recommended
+  generatedAt     DateTime @default(now())
+  sentAt          DateTime?
+}
+
