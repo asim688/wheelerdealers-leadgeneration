@@ -398,11 +398,18 @@ model InspectionItem {
   id        String   @id @default(cuid())
   jobId     String
   job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  section   String   // e.g. "Exterior"
-  itemKey   String   // stable key from the template (e.g. "exterior.front_bumper")
+  section   String   // e.g. "Tyres"
+  itemKey   String   // stable key from the template (e.g. "tyres.fl")
   label     String   // human label
-  condition String?  // Good | Fair | Poor | Fail | N/A
+  // Neutral observation chosen by the inspector, e.g. "No obvious issue
+  // observed" | "Wear or damage observed" | "Not assessed / unavailable"
+  // (paint panels: Original paint | Repainted | Panel replaced). Jobs from
+  // before Oct 2026 hold the legacy Good | Fair | Poor | Fail | N/A ratings.
+  condition String?
   comments  String?
+  // Structured measurements, e.g. { dotWeek, dotYear, treadMm } for tyres or
+  // { thicknessUm } for body panels.
+  value     Json?
   order     Int      @default(0)
 
   photos    InspectionPhoto[]
@@ -431,17 +438,23 @@ model InspectionReport {
   id              String   @id @default(cuid())
   jobId           String   @unique
   job             InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  summary         String?
+  // Section 12 — diagnostic scan and inspector comments (facts only).
+  summary         String?  // additional observations
+  diagnosticScan  String?  // diagnostic scan history / fault codes found
+  limitations     String?  // components not checked / not accessible and why
+  // Legacy (pre Oct 2026). The report no longer scores, grades or recommends;
+  // these stay nullable so historic rows still load.
   recommendations String?
   overallScore    Float?
-  // Observed at inspection time (shown in the customer report's Vehicle Summary)
+  verdict         String?
+  // Section 01 — recorded at inspection time (vehicle identification table)
   odometerKm      Int?
-  odometerStatus  String?  // Genuine | Suspected tampering | Not verified
+  odometerStatus  String?  // odometer authenticity wording, e.g. "No indication of alteration observed"
   exteriorColor   String?
-  regionalSpecs   String?  // GCC | American | Japanese | European | Other
+  regionalSpecs   String?  // GCC | American | Japanese | European | Korean | Other
+  engineConfig    String?  // e.g. "4-cylinder"
   keysCount       Int?
   spareTyre       String?  // Available | Not available | Repair kit
-  verdict         String?  // Recommended | Recommended with repairs | Not recommended
   generatedAt     DateTime @default(now())
   sentAt          DateTime?
 }

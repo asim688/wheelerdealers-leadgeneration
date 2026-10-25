@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getInspectorId } from "@/lib/auth";
-import { TOTAL_ITEMS } from "@/lib/inspectionChecklist";
+import { isRecordable, TOTAL_ITEMS } from "@/lib/inspectionChecklist";
 
 export const runtime = "nodejs";
 
@@ -28,7 +28,9 @@ export async function GET(
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
-  const answered = job.items.filter((i) => i.condition && i.condition.length > 0).length;
+  // Photo slots are evidence, not recorded parameters — exclude from progress.
+  const recordable = job.items.filter((i) => isRecordable(i.itemKey));
+  const answered = recordable.filter((i) => i.condition && i.condition.length > 0).length;
 
   return NextResponse.json({
     job: {
@@ -68,6 +70,7 @@ export async function GET(
       label: i.label,
       condition: i.condition,
       comments: i.comments,
+      value: (i.value as Record<string, string> | null) ?? null,
       order: i.order,
     })),
     photos: job.photos.map((p) => ({
@@ -77,8 +80,24 @@ export async function GET(
       caption: p.caption,
     })),
     report: job.report
-      ? { summary: job.report.summary, generatedAt: job.report.generatedAt.toISOString() }
+      ? {
+          summary: job.report.summary,
+          diagnosticScan: job.report.diagnosticScan,
+          limitations: job.report.limitations,
+          odometerKm: job.report.odometerKm,
+          odometerStatus: job.report.odometerStatus,
+          exteriorColor: job.report.exteriorColor,
+          regionalSpecs: job.report.regionalSpecs,
+          engineConfig: job.report.engineConfig,
+          keysCount: job.report.keysCount,
+          spareTyre: job.report.spareTyre,
+          generatedAt: job.report.generatedAt.toISOString(),
+        }
       : null,
-    progress: { answered, total: job.items.length || TOTAL_ITEMS, started: job.items.length > 0 },
+    progress: {
+      answered,
+      total: recordable.length || TOTAL_ITEMS,
+      started: job.items.length > 0,
+    },
   });
 }

@@ -528,7 +528,6 @@ export interface InspectorStats {
   today: number;
   completed: number;
   thisWeek?: number;
-  avgScore?: number | null;
   /** Jobs currently in the marketplace pool. */
   available?: number;
   /** Total payout for completed jobs. */
@@ -571,9 +570,27 @@ export interface InspectorItem {
   section: string;
   itemKey: string;
   label: string;
+  /** Neutral observation wording (see inspectionChecklist OBSERVATION_OPTIONS). */
   condition: string | null;
   comments: string | null;
+  /** Structured measurements, e.g. tyre DOT/tread or paint thickness. */
+  value: Record<string, string> | null;
   order: number;
+}
+
+/** Section 01 / 12 report fields saved with a submitted inspection. */
+export interface InspectorReportFields {
+  summary: string | null;
+  diagnosticScan: string | null;
+  limitations: string | null;
+  odometerKm: number | null;
+  odometerStatus: string | null;
+  exteriorColor: string | null;
+  regionalSpecs: string | null;
+  engineConfig: string | null;
+  keysCount: number | null;
+  spareTyre: string | null;
+  generatedAt: string;
 }
 
 /** A photo attached to a job / item. */

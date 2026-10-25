@@ -256,12 +256,10 @@ export async function sendReportNotification(job: {
   customerMobile: string;
   customerEmail: string;
   reportUrl: string;
-  overallScore: number | null;
 }): Promise<void> {
-  const score = job.overallScore != null ? ` Overall score: ${job.overallScore}/10.` : "";
-  const line = `Hi ${job.customerName}, your inspection report for ${job.jobCode} is ready.${score} View it: ${job.reportUrl}`;
+  const line = `Hi ${job.customerName}, your vehicle inspection report for ${job.jobCode} is ready. View it: ${job.reportUrl}`;
   const html = `<p>Hi ${escapeHtml(job.customerName)},</p>
-<p>Your vehicle inspection report is ready.${escapeHtml(score)}</p>
+<p>Your vehicle inspection report is ready. It records the inspector's observations by vehicle system so you can make your own informed decision.</p>
 <p><a href="${job.reportUrl}">View your full report</a></p>
 <p>— The Wheeler Dealers</p>`;
 

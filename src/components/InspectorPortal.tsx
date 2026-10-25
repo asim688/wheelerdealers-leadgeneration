@@ -286,11 +286,8 @@ function Dashboard({
           <p className="mt-1 text-xs font-medium text-neutral-500">Completed this week</p>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-2xl font-bold text-neutral-900">
-            {stats.avgScore != null ? `${stats.avgScore}` : "—"}
-            <span className="text-sm text-neutral-400">/10</span>
-          </p>
-          <p className="mt-1 text-xs font-medium text-neutral-500">Avg. condition score</p>
+          <p className="text-2xl font-bold text-neutral-900">{stats.available ?? 0}</p>
+          <p className="mt-1 text-xs font-medium text-neutral-500">Jobs available to accept</p>
         </div>
       </div>
 

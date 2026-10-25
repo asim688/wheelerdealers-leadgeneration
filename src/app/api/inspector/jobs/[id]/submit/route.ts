@@ -3,19 +3,21 @@ import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { getInspectorId } from "@/lib/auth";
 import { getBaseUrl, sendEmail } from "@/lib/inspection";
+import { isRecordable } from "@/lib/inspectionChecklist";
 
 export const runtime = "nodejs";
-
-const SCORE: Record<string, number> = { Good: 1, Fair: 0.6, Poor: 0.3, Fail: 0 };
 
 /**
  * POST /api/inspector/jobs/[id]/submit
  * ---------------------------------------------------------------------------
- * The inspection company submits its inspection: derives an overall score +
- * summary from the item conditions, writes the InspectionReport and moves the
- * job to "report_submitted". Admin review then finalises the job (status
- * "completed"), which is when the standardized Wheeler Dealers report link is
- * delivered to the customer. Accepts optional { summary, recommendations }.
+ * The inspection company submits its inspection: stores the Section 01
+ * vehicle details and Section 12 inspector comments on the InspectionReport
+ * and moves the job to "report_submitted". Admin review then finalises the
+ * job (status "completed"), which is when the Wheeler Dealers report link is
+ * delivered to the customer.
+ *
+ * The Wheeler Dealers documents facts — nothing here scores, grades, or
+ * recommends the vehicle; the customer makes the decision.
  */
 export async function POST(
   req: NextRequest,
@@ -43,14 +45,15 @@ export async function POST(
 
   let body: {
     summary?: string;
-    recommendations?: string;
+    diagnosticScan?: string;
+    limitations?: string;
     odometerKm?: number | string;
     odometerStatus?: string;
     exteriorColor?: string;
     regionalSpecs?: string;
+    engineConfig?: string;
     keysCount?: number | string;
     spareTyre?: string;
-    verdict?: string;
   } = {};
   try {
     body = await req.json();
@@ -64,38 +67,36 @@ export async function POST(
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
   };
-  const details = {
+
+  const recordable = job.items.filter((i) => isRecordable(i.itemKey));
+  const recorded = recordable.filter((i) => i.condition).length;
+  const unrecorded = recordable.filter((i) => !i.condition).map((i) => `${i.section}: ${i.label}`);
+
+  // Section 12 wording defaults — facts only, never a verdict. A blank
+  // "additional observations" stays empty (the report prints a neutral note).
+  const summary = str(body.summary, 4000);
+  const limitations =
+    str(body.limitations, 4000) ??
+    (unrecorded.length
+      ? `Not recorded during this inspection: ${unrecorded.slice(0, 40).join("; ")}${unrecorded.length > 40 ? "; …" : ""}.`
+      : null);
+
+  const data = {
+    summary,
+    diagnosticScan: str(body.diagnosticScan, 4000),
+    limitations,
     odometerKm: int(body.odometerKm),
-    odometerStatus: str(body.odometerStatus),
+    odometerStatus: str(body.odometerStatus, 200),
     exteriorColor: str(body.exteriorColor),
     regionalSpecs: str(body.regionalSpecs),
+    engineConfig: str(body.engineConfig),
     keysCount: int(body.keysCount),
     spareTyre: str(body.spareTyre),
-    verdict: str(body.verdict),
+    // Legacy scoring columns are intentionally left empty for new reports.
+    recommendations: null,
+    overallScore: null,
+    verdict: null,
   };
-
-  // Overall score (0-10) from rated items, ignoring N/A and unrated.
-  const rated = job.items.filter((i) => i.condition && i.condition in SCORE);
-  const overallScore =
-    rated.length > 0
-      ? Math.round(
-          (rated.reduce((s, i) => s + SCORE[i.condition as string], 0) / rated.length) * 100,
-        ) / 10
-      : null;
-
-  const counts = { Good: 0, Fair: 0, Poor: 0, Fail: 0 } as Record<string, number>;
-  for (const i of rated) counts[i.condition as string]++;
-  const flagged = job.items
-    .filter((i) => i.condition === "Poor" || i.condition === "Fail")
-    .map((i) => `${i.section}: ${i.label}${i.comments ? ` — ${i.comments}` : ""}`);
-
-  const autoSummary =
-    `Inspected ${rated.length} points — ${counts.Good} good, ${counts.Fair} fair, ` +
-    `${counts.Poor} poor, ${counts.Fail} failed.` +
-    (overallScore != null ? ` Overall score ${overallScore}/10.` : "");
-  const summary = (body.summary?.trim() || autoSummary).slice(0, 2000);
-  const recommendations =
-    (body.recommendations?.trim() || flagged.slice(0, 30).join("\n")).slice(0, 4000) || null;
 
   // A stable, unguessable token for the public customer report link.
   const reportToken = job.reportToken ?? crypto.randomBytes(16).toString("hex");
@@ -103,8 +104,8 @@ export async function POST(
   await prisma.$transaction([
     prisma.inspectionReport.upsert({
       where: { jobId: job.id },
-      create: { jobId: job.id, summary, recommendations, overallScore, ...details },
-      update: { summary, recommendations, overallScore, ...details, generatedAt: new Date() },
+      create: { jobId: job.id, ...data },
+      update: { ...data, generatedAt: new Date() },
     }),
     prisma.inspectionJob.update({
       where: { id: job.id },
@@ -118,10 +119,10 @@ export async function POST(
     adminEmail,
     `Inspection submitted — ${job.jobCode}`,
     `<p>Inspection ${job.jobCode} has been submitted and is awaiting review.</p>
-<p>Overall score: ${overallScore != null ? `${overallScore}/10` : "n/a"}.</p>
+<p>${recorded} of ${recordable.length} parameters recorded.</p>
 <p>Finalise it in the admin dashboard to deliver the report to the customer.</p>`,
   );
 
   const reportUrl = `${getBaseUrl()}/inspection/report/${reportToken}`;
-  return NextResponse.json({ ok: true, overallScore, summary, reportUrl });
+  return NextResponse.json({ ok: true, recorded, total: recordable.length, summary, reportUrl });
 }

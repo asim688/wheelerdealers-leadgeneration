@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const base = { assignedInspectorId: inspectorId };
 
-  const [openCount, todayCount, completedCount, weekCount, scoreAgg, availableCount, earnedAgg, pendingAgg] = await Promise.all([
+  const [openCount, todayCount, completedCount, weekCount, availableCount, earnedAgg, pendingAgg] = await Promise.all([
     prisma.inspectionJob.count({
       where: { ...base, status: { in: ACTIVE_STATUSES } },
     }),
@@ -38,10 +38,6 @@ export async function GET(req: NextRequest) {
     prisma.inspectionJob.count({ where: { ...base, status: { in: DONE_STATUSES } } }),
     prisma.inspectionJob.count({
       where: { ...base, status: { in: DONE_STATUSES }, completedAt: { gte: weekAgo } },
-    }),
-    prisma.inspectionReport.aggregate({
-      _avg: { overallScore: true },
-      where: { job: { assignedInspectorId: inspectorId } },
     }),
     prisma.inspectionJob.count({ where: { status: "available" } }),
     prisma.inspectionJob.aggregate({
@@ -53,8 +49,6 @@ export async function GET(req: NextRequest) {
       where: { ...base, status: { in: [...ACTIVE_STATUSES, "report_submitted"] } },
     }),
   ]);
-  const avgScore =
-    scoreAgg._avg.overallScore != null ? Math.round(scoreAgg._avg.overallScore * 10) / 10 : null;
 
   const where = { ...base };
   if (filter === "open") Object.assign(where, { status: { in: ACTIVE_STATUSES } });
@@ -89,7 +83,6 @@ export async function GET(req: NextRequest) {
       today: todayCount,
       completed: completedCount,
       thisWeek: weekCount,
-      avgScore,
       available: availableCount,
       earned: earnedAgg._sum.partnerPayout ?? 0,
       pendingEarnings: pendingAgg._sum.partnerPayout ?? 0,

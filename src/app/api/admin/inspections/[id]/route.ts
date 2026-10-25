@@ -121,7 +121,7 @@ export async function PATCH(
     data,
     include: {
       inspector: { select: { id: true, name: true } },
-      report: { select: { overallScore: true, sentAt: true } },
+      report: { select: { sentAt: true } },
     },
   });
 
@@ -146,7 +146,6 @@ export async function PATCH(
         customerMobile: updated.customerMobile,
         customerEmail: updated.customerEmail,
         reportUrl,
-        overallScore: updated.report?.overallScore ?? null,
       }),
       prisma.inspectionReport.update({
         where: { jobId: updated.id },

@@ -5,31 +5,31 @@ import Link from "next/link";
 import BrandLogo from "./BrandLogo";
 
 /**
- * Customer-facing inspection report, styled as a branded "report book":
- * cover → inspection details + vehicle summary + pass/defect overview →
- * one card per section with PASS / ATTENTION / FAIL badges and photos →
- * findings & recommendations → thank-you back page. Print CSS gives one
- * A4 page per block so "Print / Save PDF" produces a clean document.
+ * Customer-facing inspection report in The Wheeler Dealers' document format:
+ * a plain A4 record of observations by vehicle system (numbered sections
+ * 01–14) with navy parameter tables, photographic evidence and the scope /
+ * customer-decision statement. It deliberately contains no pass/fail labels,
+ * score, percentage or recommendation — "We document the facts. The customer
+ * makes the decision."
+ *
+ * Print: the running header/footer live in a table <thead>/<tfoot> so they
+ * repeat on every printed page; rows never split across pages.
  */
 
 interface Photo {
   url: string;
   caption: string | null;
 }
-interface ReportItem {
+interface ReportRow {
   label: string;
-  condition: string | null;
+  observation: string;
   comments: string | null;
   photos: Photo[];
 }
 interface ReportSection {
+  number: string;
   title: string;
-  rated: number;
-  total: number;
-  pass: number;
-  attention: number;
-  fail: number;
-  items: ReportItem[];
+  items: ReportRow[];
 }
 interface ReportData {
   jobCode: string;
@@ -48,57 +48,40 @@ interface ReportData {
   scheduledAt: string | null;
   scheduledSlot: string | null;
   completedAt: string | null;
-  overallScore: number | null;
-  summary: string | null;
-  recommendations: string | null;
   odometerKm: number | null;
   odometerStatus: string | null;
   exteriorColor: string | null;
   regionalSpecs: string | null;
+  engineConfig: string | null;
   keysCount: number | null;
   spareTyre: string | null;
-  verdict: string | null;
-  stats: { checked: number; pass: number; attention: number; fail: number };
+  diagnosticScan: string | null;
+  summary: string | null;
+  limitations: string | null;
+  recorded: number;
+  legacy: boolean;
   sections: ReportSection[];
-  flagged: Array<{ section: string; label: string; condition: string | null; comments: string | null }>;
-  photos: Photo[];
+  coverPhoto: Photo | null;
+  photoGroups: Array<{ group: string; photos: Photo[] }>;
 }
 
 const BRAND = {
+  name: "THE WHEELER DEALERS",
+  sub: "INDEPENDENT VEHICLE INSPECTION",
   site: "www.thewheelerdealers.com",
   email: "info@thewheelerdealers.com",
-  bookTitle: "Comprehensive Inspection Report",
+  tagline: "We document the facts. The customer makes the decision.",
 };
 
-/** Customer-friendly badge for an inspector's rating. */
-function badge(condition: string | null): { label: string; cls: string } {
-  switch (condition) {
-    case "Good":
-      return { label: "PASS", cls: "bg-green-600 text-white" };
-    case "Fair":
-      return { label: "ATTENTION", cls: "bg-amber-500 text-white" };
-    case "Poor":
-    case "Fail":
-      return { label: "FAIL", cls: "bg-red-600 text-white" };
-    default:
-      return { label: "N/A", cls: "bg-neutral-200 text-neutral-600" };
-  }
-}
-
-/** Inspector's overall verdict as a coloured pill. */
-function verdictBadge(v: string | null): { label: string; cls: string } | null {
-  if (!v) return null;
-  if (/^not/i.test(v)) return { label: v, cls: "bg-red-600 text-white" };
-  if (/repair/i.test(v)) return { label: v, cls: "bg-amber-500 text-white" };
-  return { label: v, cls: "bg-green-600 text-white" };
-}
+const NOT_RECORDED = "Not recorded";
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso)
-    .toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    .toUpperCase()
-    .replace(/ /g, "-");
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function dash(v: string | number | null | undefined): string {
+  return v == null || v === "" ? "—" : String(v);
 }
 
 export default function InspectionReportView({ token }: { token: string }) {
@@ -142,22 +125,27 @@ export default function InspectionReportView({ token }: { token: string }) {
     );
   }
 
-  const sections = data.sections.filter((s) => s.rated > 0 && s.title !== "Photos" && s.title !== "Summary");
-  const { checked, pass, attention, fail } = data.stats;
-  const passPct = checked ? Math.round((pass / checked) * 100) : 0;
-  const attPct = checked ? Math.round((attention / checked) * 100) : 0;
-  const failPct = checked ? Math.max(0, 100 - passPct - attPct) : 0;
-  const verdict = verdictBadge(data.verdict);
+  const total = data.sections.reduce((n, s) => n + s.items.length, 0);
+  const n12 = String(data.sections.length + 2).padStart(2, "0");
+  const n13 = String(data.sections.length + 3).padStart(2, "0");
+  const n14 = String(data.sections.length + 4).padStart(2, "0");
+  const when = `${fmtDate(data.completedAt ?? data.scheduledAt)}${data.scheduledSlot ? ` / ${data.scheduledSlot}` : ""}`;
+  const odometer =
+    data.odometerKm != null
+      ? `${data.odometerKm.toLocaleString()} km${data.odometerStatus ? `; ${data.odometerStatus.toLowerCase()}` : ""}`
+      : dash(data.odometerStatus);
 
   return (
-    <div className="min-h-screen bg-neutral-200 print:bg-white">
+    <div className="min-h-screen bg-neutral-200 text-neutral-900 print:bg-white">
       <style>{`
-        @page { size: A4; margin: 0; }
+        @page { size: A4; margin: 10mm 10mm 12mm; }
         @media print {
-          .report-page { width: 210mm; margin: 0; box-shadow: none; border-radius: 0; page-break-after: always; break-after: page; }
-          .report-page:last-child { page-break-after: auto; break-after: auto; }
-          .avoid-break { break-inside: avoid; page-break-inside: avoid; }
-          .keep-with-next { break-after: avoid; page-break-after: avoid; }
+          .report-sheet { width: auto; margin: 0; box-shadow: none; padding: 0; }
+          .report-head { display: table-header-group; }
+          .report-foot { display: table-footer-group; }
+          tr, figure, .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+          h2 { break-after: avoid; page-break-after: avoid; }
+          .report-sheet thead.navy th, .navy { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
 
@@ -174,253 +162,197 @@ export default function InspectionReportView({ token }: { token: string }) {
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-[210mm] flex-col gap-6 py-6 print:gap-0 print:py-0">
-        {/* ── Cover ─────────────────────────────────────────────────────── */}
-        <Page dark className="relative flex flex-col justify-between overflow-hidden">
-          <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-red-600/30 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-red-500/20 blur-3xl" />
-          <div className="relative flex justify-center pt-14">
-            <BrandLogo light size="lg" />
-          </div>
-          <div className="relative px-10 text-center">
-            <p className="text-sm font-semibold uppercase tracking-[0.3em] text-red-400">Vehicle Inspection</p>
-            <h1 className="mt-4 text-4xl font-extrabold leading-tight text-white sm:text-5xl">
-              Comprehensive
-              <br />
-              <span className="text-red-500">Inspection Report</span>
-            </h1>
-            <p className="mt-8 text-2xl font-semibold text-white">{data.vehicle}</p>
-            <p className="mt-2 text-sm text-neutral-400">
-              Prepared for <span className="font-medium text-neutral-200">{data.customerName}</span>
-            </p>
-            <div className="mx-auto mt-10 grid w-full max-w-md grid-cols-3 gap-2 rounded-2xl bg-white/10 px-4 py-4 text-sm text-neutral-200 backdrop-blur sm:gap-4 sm:px-8">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-neutral-400">Report No.</p>
-                <p className="font-mono text-xs font-semibold sm:text-sm">{data.jobCode}</p>
-              </div>
-              <div className="border-l border-white/20 pl-2 sm:pl-4">
-                <p className="text-[10px] uppercase tracking-wider text-neutral-400">Date</p>
-                <p className="text-xs font-semibold sm:text-sm">{fmtDate(data.completedAt ?? data.scheduledAt)}</p>
-              </div>
-              <div className="border-l border-white/20 pl-2 sm:pl-4">
-                <p className="text-[10px] uppercase tracking-wider text-neutral-400">Points</p>
-                <p className="text-xs font-semibold sm:text-sm">{checked}</p>
-              </div>
-            </div>
-          </div>
-          <div className="relative mx-4 mb-6 grid grid-cols-2 gap-3 rounded-2xl bg-black/60 px-5 py-4 text-sm text-neutral-300 sm:mx-8 sm:mb-8 sm:px-8 sm:py-5">
-            <div className="min-w-0">
-              <p className="text-[11px] uppercase tracking-wider text-neutral-500">Website</p>
-              <p className="truncate text-xs font-semibold text-white sm:text-sm">{BRAND.site}</p>
-            </div>
-            <div className="min-w-0 text-right">
-              <p className="text-[11px] uppercase tracking-wider text-neutral-500">Email</p>
-              <p className="truncate text-xs font-semibold text-white sm:text-sm">{BRAND.email}</p>
-            </div>
-          </div>
-        </Page>
-
-        {/* ── Inspection details + vehicle summary + overview ───────────── */}
-        <Page>
-          <PageHeader />
-          <Card>
-            <p className="text-xs font-medium text-neutral-500">Inspection Details</p>
-            <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Detail label="Date" value={fmtDate(data.completedAt ?? data.scheduledAt)} />
-              <Detail label="Time" value={data.scheduledSlot ?? "—"} />
-              <Detail label="Inspection Type" value={`${checked}-Point`} />
-              <Detail label="VIN Number" value={data.vin ?? "—"} mono />
-            </div>
-          </Card>
-
-          <SectionBar title="Vehicle Summary" />
-          <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_1.1fr]">
-            <div>
-              <p className="inline-block border-b-4 border-red-600 pb-1 text-2xl font-bold text-neutral-900">
-                {data.make ?? "Vehicle"}
-              </p>
-              <p className="mt-1 text-sm text-neutral-500">{[data.model, data.trim].filter(Boolean).join(" ")}</p>
-              {data.photos[0] ? (
-                <figure className="avoid-break mt-4">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={data.photos[0].url} alt={data.photos[0].caption || data.vehicle} className="aspect-[4/3] w-full rounded-2xl bg-neutral-100 object-contain" />
-                  {data.photos[0].caption && <figcaption className="mt-2 break-words text-xs leading-relaxed text-neutral-600">{data.photos[0].caption}</figcaption>}
-                </figure>
-              ) : (
-                <div className="mt-4 flex aspect-[4/3] w-full items-center justify-center rounded-2xl bg-neutral-100 text-xs text-neutral-400">
-                  No vehicle photo
+      <main className="mx-auto max-w-[210mm] py-6 print:py-0">
+        <table className="report-sheet w-full border-collapse bg-white shadow-lg print:shadow-none">
+          <thead className="report-head">
+            <tr>
+              <td className="px-4 pt-6 pb-3 sm:px-8 print:px-0 print:pt-0">
+                <div className="navy flex items-center justify-between gap-3 rounded-sm bg-[#1e3a5f] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white">
+                  <span className="shrink-0">{BRAND.name}</span>
+                  <span className="text-right font-medium tracking-[0.14em] text-white/80">Vehicle Inspection Report</span>
                 </div>
-              )}
-            </div>
-            <Card>
-              <dl className="divide-y divide-neutral-100 text-sm">
-                <Row k="Make" v={data.make} />
-                <Row k="Model" v={data.model} />
-                <Row k="Model Year" v={data.year} />
-                <Row k="Trim" v={data.trim} />
-                <Row k="Body Type" v={data.bodyClass} />
-                <Row k="Regional Specs" v={data.regionalSpecs} />
-                <Row k="Transmission" v={data.transmission} />
-                <Row k="Fuel Type" v={data.fuelType} />
-                <Row k="Exterior Colour" v={data.exteriorColor} />
-                <Row k="Odometer" v={data.odometerKm != null ? `${data.odometerKm.toLocaleString()} km${data.odometerStatus ? ` · ${data.odometerStatus}` : ""}` : data.odometerStatus} />
-                <Row k="Number of Keys" v={data.keysCount} />
-                <Row k="Spare Tyre" v={data.spareTyre} />
-                <Row k="Inspection Location" v={data.location} />
-                <Row k="Inspector" v={data.inspectorName} />
-              </dl>
-            </Card>
-          </div>
+              </td>
+            </tr>
+          </thead>
+          <tfoot className="report-foot">
+            <tr>
+              <td className="px-4 pt-3 pb-6 sm:px-8 print:px-0 print:pb-0">
+                <div className="flex items-center justify-between border-t border-neutral-300 pt-2 text-[9px] text-neutral-500">
+                  <span>Report No. {data.jobCode} · Record of observations at the stated time and place; not a certification or guarantee.</span>
+                  <span>{BRAND.site}</span>
+                </div>
+              </td>
+            </tr>
+          </tfoot>
+          <tbody>
+            <tr>
+              <td className="px-4 py-2 align-top sm:px-8 print:px-0">
+                {/* ── Title block ─────────────────────────────────────── */}
+                <div className="flex items-start justify-between gap-6">
+                  <div>
+                    <p className="text-xl font-extrabold tracking-tight text-[#1e3a5f]">{BRAND.name}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">{BRAND.sub}</p>
+                    <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-neutral-900 sm:text-3xl">Vehicle Inspection Report</h1>
+                    <p className="mt-1 text-sm text-neutral-600">
+                      {data.vehicle} · Report No. <span className="font-mono">{data.jobCode}</span>
+                    </p>
+                    <p className="text-sm text-neutral-600">Prepared for {data.customerName}</p>
+                  </div>
+                  <BrandLogo size="md" />
+                </div>
+                <div className="mt-4 h-1 w-full bg-[#2b7a8c]" />
 
-          <div className="avoid-break mt-5 grid items-center gap-6 rounded-2xl bg-neutral-900 p-7 text-white sm:grid-cols-[1fr_auto]">
-            <div>
-              <h2 className="text-2xl font-bold">Report Overview</h2>
-              {verdict && (
-                <span className={`mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${verdict.cls}`}>
-                  <Dot cls="bg-white/80" /> {verdict.label}
-                </span>
-              )}
-              <p className="mt-3 text-sm text-neutral-400">
-                {checked} inspection points checked. {pass} passed, {attention} need attention, {fail} failed.
-              </p>
-              <ul className="mt-4 space-y-1.5 text-sm">
-                <li className="flex items-center gap-2"><Dot cls="bg-green-500" /> Pass — {passPct}%</li>
-                <li className="flex items-center gap-2"><Dot cls="bg-amber-400" /> Attention — {attPct}%</li>
-                <li className="flex items-center gap-2"><Dot cls="bg-red-500" /> Fail — {failPct}%</li>
-              </ul>
-              {data.overallScore != null && (
-                <p className="mt-4 text-sm text-neutral-300">
-                  Overall condition score{" "}
-                  <span className="text-xl font-bold text-white">{data.overallScore}</span>
-                  <span className="text-neutral-500">/10</span>
+                {/* ── Vehicle details ─────────────────────────────────── */}
+                <div className="mt-5 grid gap-5 sm:grid-cols-[1fr_auto]">
+                  <Table head={["Vehicle details", "Recorded information"]} widths={["38%", "62%"]}>
+                    <Row k="Make / model" v={[data.make, data.model].filter(Boolean).join(" ") || "—"} />
+                    <Row k="Model year / regional specification" v={[data.year, data.regionalSpecs].filter(Boolean).join(" / ") || "—"} />
+                    <Row k="VIN" v={dash(data.vin)} mono />
+                    <Row k="Odometer" v={odometer} />
+                    <Row k="Fuel / engine / transmission" v={[data.fuelType, data.engineConfig, data.transmission].filter(Boolean).join(" / ") || "—"} />
+                    <Row k="Exterior colour / vehicle type" v={[data.exteriorColor, data.bodyClass].filter(Boolean).join(" / ") || "—"} />
+                    <Row k="Keys / spare tyre" v={[data.keysCount != null ? `${data.keysCount} key${data.keysCount === 1 ? "" : "s"}` : null, data.spareTyre ? `spare tyre ${data.spareTyre.toLowerCase()}` : null].filter(Boolean).join(" / ") || "—"} />
+                    <Row k="Inspection date / time" v={when} />
+                    <Row k="Inspection location" v={dash(data.location)} />
+                    <Row k="Inspector" v={dash(data.inspectorName)} />
+                    <Row k="Inspection framework" v={`${total}-parameter inspection; ${data.recorded} recorded`} />
+                  </Table>
+                  {data.coverPhoto && (
+                    <figure className="avoid-break w-full sm:w-56">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={data.coverPhoto.url} alt={data.coverPhoto.caption || data.vehicle} className="aspect-[4/3] w-full rounded-sm border border-neutral-300 bg-neutral-100 object-cover" />
+                      <figcaption className="mt-1 text-[10px] text-neutral-500">{data.coverPhoto.caption || "Vehicle as presented for inspection"}</figcaption>
+                    </figure>
+                  )}
+                </div>
+
+                {/* ── Purpose and reading guide ───────────────────────── */}
+                <h2 className="mt-7 text-lg font-bold text-[#1e3a5f]">Purpose and reading guide</h2>
+                <p className="mt-2 text-[12px] leading-relaxed text-neutral-700">
+                  This report records observations by vehicle system. It does not certify the vehicle, grade overall
+                  quality, or recommend whether it should be purchased. The customer makes the purchasing decision. No
+                  pass/fail labels, overall score, pass percentage, or defect percentage are used.
                 </p>
-              )}
-            </div>
-            <Donut pass={passPct} attention={attPct} fail={failPct} />
-          </div>
-        </Page>
+                <p className="mt-2 text-[12px] leading-relaxed text-neutral-700">
+                  <b>Observation wording:</b> &ldquo;No obvious issue observed&rdquo; records that nothing was found during
+                  this check and is not a guarantee that a component is fault-free; &ldquo;Wear or damage observed&rdquo;
+                  describes a finding, with details in the comment column; &ldquo;Not assessed / unavailable&rdquo;
+                  identifies an inspection limitation; &ldquo;{NOT_RECORDED}&rdquo; means no entry was made for that
+                  parameter.
+                </p>
+                {data.legacy && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+                    This inspection was recorded with an earlier checklist; its entries have been reworded into the neutral
+                    observation terms above.
+                  </p>
+                )}
 
-        {/* ── Section results (flow across pages; cards never split) ────── */}
-        <Page flow>
-          <PageHeader />
-          {sections.map((s) => (
-            <div key={s.title} className="mb-6">
-              <SectionBar
-                title={s.title}
-                right={`${s.pass} pass · ${s.attention} attention · ${s.fail} fail`}
-              />
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {s.items.map((it, i) => {
-                  const b = badge(it.condition);
-                  return (
-                    <div key={i} className="avoid-break rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-neutral-900">{it.label}</p>
-                        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wide ${b.cls}`}>
-                          {b.label}
-                        </span>
-                      </div>
-                      {it.comments && <p className="mt-1.5 text-xs text-neutral-500">{it.comments}</p>}
-                      {it.photos.length > 0 && (
-                        <div className={`mt-3 grid gap-2 ${it.photos.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-                          {it.photos.slice(0, 4).map((p, j) => (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img key={j} src={p.url} alt={p.caption || it.label} className="aspect-[4/3] w-full rounded-xl object-cover" />
+                {/* ── 01 Vehicle identification ──────────────────────── */}
+                <SectionHeading number="01" title="Vehicle identification and general details" />
+                <Table head={["Parameter", "Observation / record"]} widths={["38%", "62%"]}>
+                  <Row k="Make" v={dash(data.make)} />
+                  <Row k="Model" v={dash([data.model, data.trim].filter(Boolean).join(" ") || null)} />
+                  <Row k="Model year" v={dash(data.year)} />
+                  <Row k="Regional specifications" v={dash(data.regionalSpecs)} />
+                  <Row k="VIN / chassis number" v={dash(data.vin)} mono />
+                  <Row k="Transmission type" v={dash(data.transmission)} />
+                  <Row k="Engine configuration" v={dash(data.engineConfig)} />
+                  <Row k="Odometer authenticity" v={dash(data.odometerStatus)} />
+                  <Row k="Odometer reading" v={data.odometerKm != null ? `${data.odometerKm.toLocaleString()} km` : "—"} />
+                  <Row k="Fuel type" v={dash(data.fuelType)} />
+                  <Row k="Vehicle type" v={dash(data.bodyClass)} />
+                  <Row k="Exterior colour" v={dash(data.exteriorColor)} />
+                  <Row k="Spare tyre availability" v={dash(data.spareTyre)} />
+                  <Row k="Number of keys" v={dash(data.keysCount)} />
+                </Table>
+
+                {/* ── 02–11 Recorded parameters ──────────────────────── */}
+                {data.sections.map((s) => (
+                  <div key={s.title}>
+                    <SectionHeading number={s.number} title={s.title} />
+                    <Table head={["Parameter", "Observation / record", "Comment / observations"]} widths={["30%", "36%", "34%"]}>
+                      {s.items.map((it, i) => (
+                        <tr key={i} className="border-b border-neutral-200 align-top odd:bg-white even:bg-neutral-50">
+                          <td className="px-3 py-2 text-[11px] font-semibold text-neutral-800">{it.label}</td>
+                          <td className={`px-3 py-2 text-[11px] ${it.observation === NOT_RECORDED ? "text-neutral-400" : "text-neutral-800"}`}>
+                            {it.observation}
+                          </td>
+                          <td className="px-3 py-2 text-[11px] text-neutral-700">
+                            {it.comments || <span className="text-neutral-400">—</span>}
+                            {it.photos.length > 0 && (
+                              <span className="mt-1.5 flex flex-wrap gap-1">
+                                {it.photos.slice(0, 4).map((p, j) => (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img key={j} src={p.url} alt={p.caption || `${it.label} photo ${j + 1}`} className="h-12 w-16 rounded-sm border border-neutral-300 object-cover" />
+                                ))}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </Table>
+                  </div>
+                ))}
+
+                {/* ── 12 Diagnostic scan and inspector comments ──────── */}
+                <SectionHeading number={n12} title="Diagnostic scan and inspector comments" />
+                <Table head={["Parameter", "Observation / record"]} widths={["30%", "70%"]}>
+                  <Row k="Diagnostic scan history" v={data.diagnosticScan || NOT_RECORDED} muted={!data.diagnosticScan} pre />
+                  <Row k="Additional observations" v={data.summary || "No additional observations recorded."} muted={!data.summary} pre />
+                  <Row k="Inspection limitations" v={data.limitations || "No limitations recorded."} muted={!data.limitations} pre />
+                </Table>
+
+                {/* ── 13 Photographic evidence ───────────────────────── */}
+                <SectionHeading number={n13} title="Photographic evidence and attachments" />
+                {data.photoGroups.length === 0 ? (
+                  <p className="mt-2 text-[12px] text-neutral-500">No photographs were attached to this report.</p>
+                ) : (
+                  <div className="mt-3 space-y-4">
+                    {data.photoGroups.map((g) => (
+                      <div key={g.group} className="avoid-break">
+                        <div className="navy flex items-center justify-between bg-[#2b7a8c] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                          <span>{g.group}</span>
+                          <span className="font-medium normal-case tracking-normal text-white/80">{g.photos.length} photo{g.photos.length === 1 ? "" : "s"}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 border border-t-0 border-neutral-300 p-2 sm:grid-cols-4">
+                          {g.photos.map((p, i) => (
+                            <figure key={i} className="min-w-0">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={p.url} alt={p.caption || `${g.group} ${i + 1}`} className="aspect-[4/3] w-full rounded-sm bg-neutral-100 object-cover" />
+                              {p.caption && <figcaption className="mt-1 break-words text-[10px] leading-snug text-neutral-600">{p.caption}</figcaption>}
+                            </figure>
                           ))}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </Page>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-        {/* ── Findings, recommendations, photos ─────────────────────────── */}
-        <Page>
-          <PageHeader />
-          <SectionBar title="Inspector's Findings" />
-          {verdict && (
-            <div className={`avoid-break mt-4 flex items-center gap-3 rounded-2xl px-5 py-4 ${verdict.cls}`}>
-              <span className="text-xs font-semibold uppercase tracking-wider opacity-80">Verdict</span>
-              <span className="text-lg font-bold">{verdict.label}</span>
-            </div>
-          )}
-          {data.flagged.length === 0 ? (
-            <Card className="mt-4 border border-green-200 bg-green-50">
-              <p className="text-sm font-semibold text-green-800">No failed points were found during this inspection.</p>
-            </Card>
-          ) : (
-            <Card className="mt-4 border border-red-200 bg-red-50">
-              <p className="text-sm font-semibold text-red-800">
-                {data.flagged.length} point{data.flagged.length === 1 ? "" : "s"} failed and need attention
-              </p>
-              <ul className="mt-3 space-y-2 text-sm text-red-900">
-                {data.flagged.map((f, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="mt-0.5 shrink-0 rounded-full bg-red-600 px-2 text-[10px] font-bold leading-5 text-white">FAIL</span>
-                    <span>
-                      <b>{f.section}:</b> {f.label}
-                      {f.comments ? <span className="text-red-700"> — {f.comments}</span> : null}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-
-          {data.summary && (
-            <Card className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Summary</p>
-              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-neutral-800">{data.summary}</p>
-            </Card>
-          )}
-          {data.recommendations && (
-            <Card className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Recommended Repairs</p>
-              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-neutral-800">{data.recommendations}</p>
-            </Card>
-          )}
-
-          {data.photos.length > 1 && (
-            <>
-              <SectionBar title="Vehicle Photos" />
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {data.photos.slice(1, 13).map((p, i) => (
-                  <figure key={i} className="avoid-break min-w-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.url} alt={p.caption || `Vehicle photo ${i + 2}`} className="aspect-[4/3] w-full rounded-xl bg-neutral-100 object-contain" />
-                    {p.caption && <figcaption className="mt-2 break-words text-xs leading-relaxed text-neutral-600">{p.caption}</figcaption>}
-                  </figure>
-                ))}
-              </div>
-            </>
-          )}
-        </Page>
-
-        {/* ── Back page ─────────────────────────────────────────────────── */}
-        <Page dark className="relative flex flex-col items-center justify-between overflow-hidden text-center">
-          <div className="pointer-events-none absolute -left-24 top-1/3 h-96 w-96 rounded-full bg-red-600/25 blur-3xl" />
-          <div />
-          <div className="relative px-10">
-            <h2 className="text-4xl font-extrabold leading-tight text-white sm:text-5xl">
-              Thank You for Choosing
-              <br />
-              <span className="text-red-500">The Wheeler Dealers</span>
-            </h2>
-            <p className="mt-6 text-sm text-neutral-400">{BRAND.site}</p>
-            <p className="mt-16 text-sm text-neutral-400">Buy. Sell. Trade. Smarter.</p>
-            <div className="mt-16 flex justify-center">
-              <BrandLogo light size="md" />
-            </div>
-          </div>
-          <p className="relative mx-10 mb-8 text-[10px] leading-relaxed text-neutral-500">
-            This report reflects the condition of the vehicle at the time and place of inspection, based on a visual
-            and functional check by a Wheeler Dealers inspector. It is not a warranty or guarantee of future
-            performance. Report No. {data.jobCode}.
-          </p>
-        </Page>
+                {/* ── 14 Scope, limitations and customer decision ────── */}
+                <div className="avoid-break">
+                <SectionHeading number={n14} title="Scope, limitations and customer decision" />
+                <p className="mt-2 text-[12px] leading-relaxed text-neutral-700">
+                  This report is a record of observations made during the inspection at the stated time. A visual,
+                  non-invasive inspection may not identify concealed, intermittent or future faults. Where access or test
+                  conditions limited the assessment, the limitation is stated in the report.
+                </p>
+                <p className="mt-2 text-[12px] leading-relaxed text-neutral-700">
+                  The report does not certify that the vehicle is safe, fault-free, mechanically sound, approved or
+                  suitable for purchase. No finding should be interpreted as a guarantee. The customer is responsible for
+                  reviewing the information and making their own purchasing decision.
+                </p>
+                <div className="avoid-break mt-5 border-l-4 border-[#1e3a5f] bg-neutral-50 px-4 py-3">
+                  <p className="text-xs font-bold tracking-wide text-[#1e3a5f]">{BRAND.name}</p>
+                  <p className="mt-0.5 text-sm text-neutral-800">{BRAND.tagline}</p>
+                  <p className="mt-2 text-[10px] text-neutral-500">
+                    {BRAND.site} · {BRAND.email} · Report No. {data.jobCode}
+                  </p>
+                </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </main>
     </div>
   );
@@ -428,93 +360,41 @@ export default function InspectionReportView({ token }: { token: string }) {
 
 /* ── Building blocks ─────────────────────────────────────────────────────── */
 
-function Page({
+function SectionHeading({ number, title }: { number: string; title: string }) {
+  return <h2 className="mt-7 text-lg font-bold text-[#1e3a5f]">{number}. {title}</h2>;
+}
+
+function Table({
+  head,
+  widths,
   children,
-  dark = false,
-  flow = false,
-  className = "",
 }: {
+  head: string[];
+  widths: string[];
   children: React.ReactNode;
-  dark?: boolean;
-  /** Content taller than one page flows onto the next instead of being clipped to A4. */
-  flow?: boolean;
-  className?: string;
 }) {
   return (
-    <section
-      className={`report-page mx-auto w-full max-w-[210mm] rounded-2xl shadow-lg print:shadow-none ${
-        flow ? "" : "min-h-[297mm]"
-      } ${dark ? "bg-neutral-950" : "bg-neutral-100 p-6 sm:p-8"} ${className}`}
-    >
-      {children}
-    </section>
+    <table className="mt-2 w-full border-collapse border border-neutral-300 text-left">
+      <colgroup>
+        {widths.map((w, i) => <col key={i} style={{ width: w }} />)}
+      </colgroup>
+      <thead className="navy">
+        <tr className="bg-[#1e3a5f] text-white">
+          {head.map((h) => (
+            <th key={h} className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider">{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>{children}</tbody>
+    </table>
   );
 }
 
-function PageHeader() {
+function Row({ k, v, mono = false, muted = false, pre = false }: { k: string; v: string; mono?: boolean; muted?: boolean; pre?: boolean }) {
   return (
-    <div className="mb-5 flex items-center justify-between">
-      <BrandLogo size="sm" />
-      <span className="text-xs text-neutral-400">{BRAND.bookTitle}</span>
-    </div>
-  );
-}
-
-function SectionBar({ title, right }: { title: string; right?: string }) {
-  return (
-    <div className="keep-with-next mt-5 flex items-center justify-between rounded-xl bg-neutral-900 px-5 py-3 text-white">
-      <h2 className="text-base font-semibold">{title}</h2>
-      {right && <span className="text-xs text-neutral-400">{right}</span>}
-    </div>
-  );
-}
-
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 ${className}`}>{children}</div>;
-}
-
-function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div>
-      <p className="text-[11px] text-neutral-500">{label}</p>
-      <p className={`mt-0.5 text-sm font-semibold text-neutral-900 ${mono ? "font-mono" : ""}`}>{value}</p>
-    </div>
-  );
-}
-
-function Row({ k, v }: { k: string; v: string | number | null | undefined }) {
-  return (
-    <div className="flex items-center justify-between py-2">
-      <dt className="text-neutral-500">{k}</dt>
-      <dd className="font-semibold text-neutral-900">{v ?? "—"}</dd>
-    </div>
-  );
-}
-
-function Dot({ cls }: { cls: string }) {
-  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${cls}`} />;
-}
-
-/** Pass / attention / fail donut using a conic gradient (prints cleanly). */
-function Donut({ pass, attention, fail }: { pass: number; attention: number; fail: number }) {
-  const a = pass;
-  const b = pass + attention;
-  const style = {
-    background: `conic-gradient(#22c55e 0 ${a}%, #fbbf24 ${a}% ${b}%, #ef4444 ${b}% 100%)`,
-    WebkitPrintColorAdjust: "exact",
-    printColorAdjust: "exact",
-  } as React.CSSProperties;
-  return (
-    <div className="relative mx-auto h-40 w-40 rounded-full" style={style}>
-      <div className="absolute inset-5 flex flex-col items-center justify-center rounded-full bg-neutral-900">
-        <span className="text-3xl font-extrabold text-white">{pass}%</span>
-        <span className="text-[11px] uppercase tracking-wider text-neutral-400">Pass</span>
-      </div>
-      {fail > 0 && (
-        <span className="absolute -right-2 -top-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">
-          {fail}% fail
-        </span>
-      )}
-    </div>
+    <tr className="border-b border-neutral-200 align-top odd:bg-white even:bg-neutral-50">
+      <td className="px-3 py-2 text-[11px] font-semibold text-neutral-800">{k}</td>
+      <td className={`px-3 py-2 text-[11px] ${muted ? "text-neutral-400" : "text-neutral-800"} ${mono ? "font-mono" : ""} ${pre ? "whitespace-pre-line" : ""}`}>{v}</td>
+    </tr>
   );
 }

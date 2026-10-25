@@ -1,17 +1,30 @@
 /**
  * ----------------------------------------------------------------------------
- * Vehicle inspection checklist template.
+ * Vehicle inspection checklist template (client format, October 2026).
  * ----------------------------------------------------------------------------
- * The canonical list of inspection points, grouped into the nine sections the
- * client specified. When an inspector starts a job we materialise these into
- * per-job `InspectionItem` rows (each gets a stable id) so answers and photos
- * can attach to individual points. Edit freely — keys must stay unique.
+ * The Wheeler Dealers documents facts — it does not grade, score, pass/fail or
+ * recommend a vehicle. Every parameter is recorded with neutral observation
+ * wording and the customer makes the purchasing decision.
+ *
+ * Report sections:
+ *   01 Vehicle identification ........ job + report fields (not items)
+ *   02–11 .............................. checklist items below (materialised
+ *                                        into per-job `InspectionItem` rows)
+ *   12 Diagnostic scan & comments ..... report fields (not items)
+ *   13 Photographic evidence .......... photo-slot items below
+ *   14 Scope & customer decision ...... fixed text
+ *
+ * Edit freely — keys must stay unique.
  */
 
+/** How a parameter is recorded by the inspector. */
+export type ItemType = "observation" | "tyre" | "rim" | "paint" | "brake_type" | "photo";
+
 export interface ChecklistItem {
-  /** Stable unique key, e.g. "exterior.front_bumper". */
+  /** Stable unique key, e.g. "tyres.fl". */
   key: string;
   label: string;
+  type: ItemType;
 }
 
 export interface ChecklistSection {
@@ -20,189 +33,259 @@ export interface ChecklistSection {
   items: ChecklistItem[];
 }
 
-/** Condition ratings offered for each inspection point. */
-export const CONDITION_OPTIONS = ["Good", "Fair", "Poor", "Fail", "N/A"] as const;
-export type ConditionOption = (typeof CONDITION_OPTIONS)[number];
+export const NOT_ASSESSED = "Not assessed / unavailable";
 
-function section(key: string, title: string, pairs: [string, string][]): ChecklistSection {
+/** Neutral observation choices offered for most parameters. */
+export const OBSERVATION_OPTIONS = [
+  "No obvious issue observed",
+  "Wear or damage observed",
+  NOT_ASSESSED,
+] as const;
+
+const RIM_OPTIONS = ["No obvious issue observed", "Damaged or scratched", NOT_ASSESSED] as const;
+const PAINT_OPTIONS = ["Original paint", "Repainted", "Panel replaced", NOT_ASSESSED] as const;
+const BRAKE_TYPE_OPTIONS = ["Disc", "Drum", NOT_ASSESSED] as const;
+
+/** Observation choices per item type (photo slots have none). */
+export function optionsFor(type: ItemType): readonly string[] {
+  switch (type) {
+    case "rim":
+      return RIM_OPTIONS;
+    case "paint":
+      return PAINT_OPTIONS;
+    case "brake_type":
+      return BRAKE_TYPE_OPTIONS;
+    case "photo":
+      return [];
+    default:
+      return OBSERVATION_OPTIONS;
+  }
+}
+
+export interface ValueField {
+  key: string;
+  label: string;
+  unit?: string;
+  placeholder: string;
+}
+
+/** Structured measurements stored in `InspectionItem.value` per item type. */
+export const VALUE_FIELDS: Partial<Record<ItemType, ValueField[]>> = {
+  tyre: [
+    { key: "dotWeek", label: "DOT week", placeholder: "e.g. 23" },
+    { key: "dotYear", label: "DOT year", placeholder: "e.g. 2023" },
+    { key: "treadMm", label: "Tread depth", unit: "mm", placeholder: "e.g. 6.5" },
+  ],
+  paint: [{ key: "thicknessUm", label: "Paint thickness", unit: "µm", placeholder: "e.g. 120" }],
+};
+
+/** Every measurement key the autosave endpoint will accept. */
+export const VALUE_KEYS = new Set(
+  Object.values(VALUE_FIELDS).flatMap((fields) => fields.map((f) => f.key)),
+);
+
+function section(
+  key: string,
+  title: string,
+  pairs: Array<[string, string] | [string, string, ItemType]>,
+): ChecklistSection {
   return {
     key,
     title,
-    items: pairs.map(([k, label]) => ({ key: `${key}.${k}`, label })),
+    items: pairs.map(([k, label, type]) => ({ key: `${key}.${k}`, label, type: type ?? "observation" })),
   };
 }
 
 export const INSPECTION_SECTIONS: ChecklistSection[] = [
-  section("exterior", "Exterior", [
+  section("tyres", "Tyres", [
+    ["fl", "Front-left tyre (FL)", "tyre"],
+    ["fr", "Front-right tyre (FR)", "tyre"],
+    ["rl", "Rear-left tyre (RL)", "tyre"],
+    ["rr", "Rear-right tyre (RR)", "tyre"],
+    ["spare", "Spare tyre (ST)", "tyre"],
+  ]),
+  section("rims", "Rims / wheels", [
+    ["fl", "Front-left rim", "rim"],
+    ["fr", "Front-right rim", "rim"],
+    ["rl", "Rear-left rim", "rim"],
+    ["rr", "Rear-right rim", "rim"],
+    ["spare", "Spare wheel rim", "rim"],
+  ]),
+  section("brakes", "Braking system", [
+    ["pads_fl", "Front-left brake pads"],
+    ["disc_fl", "Front-left brake disc"],
+    ["pads_fr", "Front-right brake pads"],
+    ["disc_fr", "Front-right brake disc"],
+    ["pads_rl", "Rear-left brake pads"],
+    ["disc_rl", "Rear-left brake disc"],
+    ["pads_rr", "Rear-right brake pads"],
+    ["disc_rr", "Rear-right brake disc"],
+    ["surface_fl", "Front-left brake disc surface"],
+    ["surface_fr", "Front-right brake disc surface"],
+    ["surface_rl", "Rear-left brake disc surface"],
+    ["surface_rr", "Rear-right brake disc surface"],
+    ["type_front", "Front brake type", "brake_type"],
+    ["type_rear", "Rear brake type", "brake_type"],
+  ]),
+  section("suspension", "Suspension", [
+    ["front_overall", "Front suspension overall"],
+    ["front_right", "Front-right suspension"],
+    ["front_left", "Front-left suspension"],
+    ["rear_overall", "Rear suspension overall"],
+    ["rear_right", "Rear-right suspension"],
+    ["rear_left", "Rear-left suspension"],
+    ["front_surface", "Front suspension surface damage"],
+    ["rear_surface", "Rear suspension surface damage"],
+  ]),
+  section("trim", "Interior and exterior trim", [
+    ["roof_lining", "Roof lining"],
+    ["rear_view_mirror", "Rear-view mirror"],
+    ["steering_upholstery", "Steering wheel upholstery"],
+    ["seats_upholstery", "Seats upholstery"],
+    ["gear_lever", "Gear lever"],
+    ["trunk_lining", "Trunk lining"],
+    ["armrest", "Armrest and side pockets"],
+    ["dashboard", "Dashboard"],
+    ["floor_mats", "Floor mats"],
+    ["doors", "Doors"],
+    ["front_windscreen", "Front windscreen"],
+    ["rear_windscreen", "Rear windscreen"],
+    ["side_windows", "Side windows"],
+    ["hood", "Hood / bonnet"],
+    ["trunk", "Trunk"],
     ["front_bumper", "Front bumper"],
     ["rear_bumper", "Rear bumper"],
-    ["bonnet", "Bonnet / hood"],
-    ["roof", "Roof"],
-    ["boot_lid", "Boot / tailgate"],
-    ["fender_fl", "Front-left fender"],
-    ["fender_fr", "Front-right fender"],
-    ["fender_rl", "Rear-left fender"],
-    ["fender_rr", "Rear-right fender"],
-    ["door_fl", "Front-left door"],
-    ["door_fr", "Front-right door"],
-    ["door_rl", "Rear-left door"],
-    ["door_rr", "Rear-right door"],
-    ["windshield", "Front windshield"],
-    ["rear_windshield", "Rear windshield"],
-    ["windows_left", "Left windows"],
-    ["windows_right", "Right windows"],
-    ["headlight_left", "Left headlight"],
-    ["headlight_right", "Right headlight"],
-    ["taillight_left", "Left taillight"],
-    ["taillight_right", "Right taillight"],
-    ["fog_lights", "Fog lights"],
-    ["side_mirrors", "Side mirrors"],
-    ["exterior_trim", "Exterior trim & mouldings"],
-    ["number_plates", "Number plates"],
-    ["wiper_blades", "Wiper blades"],
-    ["paint_condition", "Overall paint condition"],
-    ["panel_gaps", "Panel gaps & alignment"],
   ]),
-  section("interior", "Interior", [
-    ["dashboard", "Dashboard"],
-    ["steering_wheel", "Steering wheel"],
-    ["driver_seat", "Driver seat"],
-    ["passenger_seat", "Passenger seat"],
-    ["rear_seats", "Rear seats"],
-    ["seatbelts", "Seatbelts"],
-    ["headliner", "Headliner"],
-    ["carpets", "Carpets & mats"],
-    ["door_panels", "Door panels"],
-    ["center_console", "Center console"],
-    ["glovebox", "Glovebox"],
-    ["ac_cooling", "A/C cooling"],
-    ["ac_heating", "Heater"],
-    ["infotainment", "Infotainment / display"],
-    ["speakers", "Speakers / audio"],
-    ["instrument_cluster", "Instrument cluster"],
-    ["interior_lights", "Interior lights"],
-    ["sunroof", "Sunroof / moonroof"],
-    ["cup_holders", "Cup holders & storage"],
-    ["boot_interior", "Boot interior & tools"],
-    ["rear_vents", "Rear A/C vents"],
-    ["cabin_odor", "Cabin odour / cleanliness"],
-  ]),
-  section("mechanical", "Mechanical", [
-    ["engine_start", "Engine start"],
-    ["engine_idle", "Engine idle"],
-    ["engine_noise", "Engine noise"],
-    ["oil_level", "Engine oil level"],
-    ["oil_condition", "Engine oil condition"],
-    ["coolant_level", "Coolant level"],
-    ["coolant_leaks", "Coolant leaks"],
-    ["brake_fluid", "Brake fluid"],
-    ["power_steering_fluid", "Power steering fluid"],
-    ["transmission_fluid", "Transmission fluid"],
-    ["transmission_shifting", "Transmission shifting"],
-    ["drive_belts", "Drive belts"],
-    ["hoses", "Hoses"],
-    ["radiator", "Radiator"],
-    ["water_pump", "Water pump"],
-    ["engine_mounts", "Engine mounts"],
-    ["oil_leaks", "Oil leaks"],
-    ["exhaust_smoke", "Exhaust smoke"],
-    ["timing_belt_chain", "Timing belt / chain"],
-    ["air_filter", "Air filter"],
-    ["throttle_body", "Throttle body"],
-    ["turbo", "Turbo / supercharger"],
-    ["clutch", "Clutch (if manual)"],
-    ["engine_bay", "Engine bay cleanliness"],
-  ]),
-  section("tyres_brakes", "Tyres & Brakes", [
-    ["tyre_fl_tread", "Front-left tyre tread"],
-    ["tyre_fr_tread", "Front-right tyre tread"],
-    ["tyre_rl_tread", "Rear-left tyre tread"],
-    ["tyre_rr_tread", "Rear-right tyre tread"],
-    ["tyre_fl_condition", "Front-left tyre condition"],
-    ["tyre_fr_condition", "Front-right tyre condition"],
-    ["tyre_rl_condition", "Rear-left tyre condition"],
-    ["tyre_rr_condition", "Rear-right tyre condition"],
-    ["spare_tyre", "Spare tyre"],
-    ["brake_pads_front", "Front brake pads"],
-    ["brake_pads_rear", "Rear brake pads"],
-    ["brake_discs_front", "Front brake discs"],
-    ["brake_discs_rear", "Rear brake discs"],
-    ["handbrake", "Handbrake / parking brake"],
-    ["abs", "ABS operation"],
-    ["wheel_alignment", "Wheel alignment"],
-  ]),
-  section("underbody", "Underbody", [
-    ["chassis_frame", "Chassis / frame"],
-    ["subframe", "Subframe"],
-    ["front_suspension", "Front suspension"],
-    ["rear_suspension", "Rear suspension"],
-    ["shock_absorbers", "Shock absorbers"],
-    ["control_arms", "Control arms"],
-    ["ball_joints", "Ball joints"],
-    ["steering_rack", "Steering rack"],
-    ["cv_joints", "CV joints & boots"],
-    ["exhaust_system", "Exhaust system"],
-    ["fuel_tank", "Fuel tank & lines"],
-    ["underbody_corrosion", "Underbody corrosion"],
-    ["engine_undertray", "Engine undertray"],
-    ["differential", "Differential / axles"],
-  ]),
-  section("electrical", "Electrical", [
-    ["battery_health", "Battery health"],
-    ["battery_terminals", "Battery terminals"],
-    ["alternator", "Alternator charging"],
-    ["starter", "Starter motor"],
-    ["headlights_op", "Headlights operation"],
-    ["indicators", "Indicators"],
-    ["hazard_lights", "Hazard lights"],
+  section("electrical", "Electrical system and equipment", [
+    ["gear_lever", "Gear lever"],
+    ["doors", "Doors"],
+    ["rear_windscreen", "Rear windscreen"],
+    ["steering", "Steering"],
+    ["key", "Key"],
+    ["infotainment", "Infotainment system"],
+    ["windows", "Windows operation"],
+    ["seats_adjustment", "Seats adjustment"],
+    ["door_lock", "Door lock"],
+    ["ac", "A/C control and cooling"],
+    ["console_buttons", "Centre console buttons"],
+    ["cameras", "Cameras"],
+    ["gauges", "Gauges"],
+    ["mirrors", "Rear-view / side mirrors"],
+    ["ac_grilles", "A/C grilles"],
+    ["ignition", "Ignition system"],
     ["brake_lights", "Brake lights"],
+    ["headlights", "Headlights"],
+    ["fog_lights", "Fog lights"],
     ["reverse_lights", "Reverse lights"],
-    ["interior_lighting", "Interior lighting"],
-    ["power_windows", "Power windows operation"],
-    ["central_locking", "Central locking"],
-    ["wipers_front", "Front wipers"],
-    ["wipers_rear", "Rear wiper"],
-    ["washer_jets", "Washer jets"],
-    ["warning_lights", "Sensors & warning lights"],
-    ["reverse_camera", "Reverse camera / sensors"],
-    ["key_fob", "Key fob / remote"],
-  ]),
-  section("road_test", "Road Test", [
-    ["cold_start", "Cold start"],
-    ["acceleration", "Acceleration"],
-    ["engine_power", "Engine power"],
-    ["gear_shifts", "Gear shifts"],
-    ["clutch_engagement", "Clutch engagement"],
-    ["braking", "Braking performance"],
-    ["steering_response", "Steering response"],
-    ["steering_noise", "Steering noise"],
-    ["suspension_ride", "Suspension ride"],
-    ["wheel_bearing", "Wheel bearing noise"],
+    ["plate_lights", "Number plate lights"],
+    ["indicators", "Indicators and hazard lights"],
+    ["wipers", "Wipers"],
+    ["soft_close_doors", "Soft-closing doors"],
+    ["sunroof", "Sunroof / moonroof"],
+    ["interior_lights", "Interior lights"],
     ["cruise_control", "Cruise control"],
-    ["cabin_noise", "Cabin noise (NVH)"],
-    ["vibrations", "Vibrations"],
-    ["ac_drive", "A/C during drive"],
-    ["warnings_drive", "Warning lights during drive"],
-    ["parking_brake_hold", "Parking brake hold"],
+    ["horn", "Horn"],
+    ["parking_sensors", "Parking sensors"],
   ]),
-  section("photos", "Photos", [
-    ["front", "Front photo"],
-    ["rear", "Rear photo"],
-    ["left", "Left side photo"],
-    ["right", "Right side photo"],
-    ["engine_bay", "Engine bay photo"],
-    ["odometer", "Odometer photo"],
+  section("paint", "Body and paint", [
+    ["front_bumper", "Front bumper", "paint"],
+    ["bonnet", "Bonnet", "paint"],
+    ["fender_fr", "Front right fender", "paint"],
+    ["fender_fl", "Front left fender", "paint"],
+    ["door_fr", "Front right door", "paint"],
+    ["door_fl", "Front left door", "paint"],
+    ["door_rr", "Rear right door", "paint"],
+    ["door_rl", "Rear left door", "paint"],
+    ["fender_rr", "Rear right fender", "paint"],
+    ["fender_rl", "Rear left fender", "paint"],
+    ["boot", "Boot lid / tailgate", "paint"],
+    ["rear_bumper", "Rear bumper", "paint"],
+    ["roof", "Roof", "paint"],
   ]),
-  section("summary", "Summary", [
-    ["overall_condition", "Overall condition"],
-    ["major_findings", "Major findings"],
-    ["recommended_repairs", "Recommended repairs"],
-    ["inspector_notes", "Inspector notes"],
+  section("engine", "Engine", [
+    ["upper_cover", "Engine upper cover"],
+    ["shield_cover", "Engine shield cover"],
+    ["mounts", "Engine mounts"],
+    ["bonnet_hinge", "Bonnet hinge and holder"],
+    ["turbo", "Turbo / supercharger"],
+    ["fender_liners", "Fender liners"],
+    ["drive_belt", "Drive belt / pulleys"],
+    ["idle", "Engine idle"],
+    ["oil_cap", "Engine oil filler cap"],
+    ["radiator", "Radiator"],
+    ["oil_leaks", "Engine oil leaks"],
+    ["oil_condition", "Engine oil condition"],
+    ["coolant_condition", "Coolant condition"],
+    ["coolant_cap", "Coolant cap"],
+    ["hoses", "Hoses and pipes"],
+    ["exhaust", "Exhaust system"],
+    ["four_wheel_drive", "Four-wheel drive (4WD)"],
+  ]),
+  section("transmission", "Transmission and drivetrain", [
+    ["fluid", "Transmission fluid level and condition"],
+    ["leaks", "Transmission fluid leaks"],
+    ["selector", "Gear selector"],
+    ["noise", "Unusual noise"],
+    ["shifting", "Gear shifting"],
+    ["differential", "Differential"],
+  ]),
+  section("chassis", "Chassis and subframe", [
+    ["core_support", "Core support"],
+    ["frame_rail", "Frame rail"],
+    ["wheel_house", "Wheel house"],
+    ["fender_apron_right", "Right fender apron"],
+    ["shock_tower", "Shock tower / shock mount"],
+    ["radiator_side_support", "Radiator side support (side baffle)"],
+    ["fender_apron_left", "Left fender apron"],
+    ["hinge_pillar", "Front body hinge pillar"],
+    ["front_floor", "Front floor board"],
+    ["door_sill_left", "Left door sill"],
+    ["b_pillar", "Centre pillar post (B-pillar)"],
+    ["mid_floor", "Mid floor board"],
+    ["quarter_panel", "Body quarter panel"],
+    ["c_pillar", "C-pillar"],
+    ["seat_frame", "Seat frame"],
+    ["rear_floor", "Rear floor panel"],
+    ["a_pillar_left", "Left A-pillar"],
+    ["roof_panel", "Roof panel"],
+    ["door_sill_right", "Right door sill"],
+    ["a_pillar_right", "Right A-pillar"],
+  ]),
+  section("photos", "Photographic evidence and attachments", [
+    ["exterior", "Exterior overview", "photo"],
+    ["interior", "Interior overview", "photo"],
+    ["engine_bay", "Engine bay", "photo"],
+    ["undercarriage", "Undercarriage / chassis", "photo"],
+    ["odometer", "Odometer", "photo"],
+    ["scan", "Diagnostic scan evidence", "photo"],
   ]),
 ];
 
-/** Total number of inspection points across all sections. */
-export const TOTAL_ITEMS = INSPECTION_SECTIONS.reduce((n, s) => n + s.items.length, 0);
+/** Section title of the photo-slot section (gallery, not recorded parameters). */
+export const PHOTO_SECTION_TITLE = "Photographic evidence and attachments";
+
+const TYPE_BY_KEY = new Map<string, ItemType>(
+  INSPECTION_SECTIONS.flatMap((s) => s.items.map((it) => [it.key, it.type] as const)),
+);
+
+/**
+ * Item type for a stored item key. Unknown (legacy) keys are treated as plain
+ * observations, except the old "photos.*" gallery slots.
+ */
+export function itemType(itemKey: string): ItemType {
+  return TYPE_BY_KEY.get(itemKey) ?? (itemKey.startsWith("photos.") ? "photo" : "observation");
+}
+
+/** Photo slots are evidence, not recorded parameters, so they don't count towards progress. */
+export function isRecordable(itemKey: string): boolean {
+  return itemType(itemKey) !== "photo";
+}
+
+/** Number of recordable parameters in the template (sections 02–11). */
+export const TOTAL_ITEMS = INSPECTION_SECTIONS.reduce(
+  (n, s) => n + s.items.filter((it) => it.type !== "photo").length,
+  0,
+);
 
 /** Flattens the template into ordered rows for materialising a job's items. */
 export function flattenChecklist(): Array<{
@@ -219,4 +302,58 @@ export function flattenChecklist(): Array<{
     }
   }
   return rows;
+}
+
+/* ── Wording helpers (shared by inspector app and customer report) ─────── */
+
+/** Pre-October-2026 jobs rated points Good/Fair/Poor/Fail/N-A; reword neutrally. */
+const LEGACY_CONDITIONS: Record<string, string> = {
+  Good: "No obvious issue observed",
+  Fair: "Wear or damage observed",
+  Poor: "Wear or damage observed",
+  Fail: "Wear or damage observed",
+  "N/A": NOT_ASSESSED,
+};
+
+export function isLegacyCondition(condition: string | null | undefined): boolean {
+  return !!condition && condition in LEGACY_CONDITIONS;
+}
+
+export function neutralCondition(condition: string | null | undefined): string | null {
+  if (!condition) return null;
+  return LEGACY_CONDITIONS[condition] ?? condition;
+}
+
+export type ItemValue = Record<string, string>;
+
+/** Human-readable measurement text, e.g. "DOT 23/2023 · Tread 6.5 mm". */
+export function formatValue(type: ItemType, value: ItemValue | null | undefined): string | null {
+  if (!value) return null;
+  if (type === "tyre") {
+    const parts: string[] = [];
+    const dot = [value.dotWeek, value.dotYear].filter(Boolean).join("/");
+    if (dot) parts.push(`DOT ${dot}`);
+    if (value.treadMm) parts.push(`Tread ${value.treadMm} mm`);
+    return parts.length ? parts.join(" · ") : null;
+  }
+  if (type === "paint") {
+    return value.thicknessUm ? `${value.thicknessUm} µm` : null;
+  }
+  return null;
+}
+
+/**
+ * The "Observation / Record" cell for the customer report: the neutral
+ * observation plus any measurement, or the standard not-recorded wording.
+ */
+export function describeObservation(
+  itemKey: string,
+  condition: string | null | undefined,
+  value: ItemValue | null | undefined,
+): string {
+  const type = itemType(itemKey);
+  const obs = neutralCondition(condition);
+  const measured = formatValue(type, value);
+  if (obs && measured) return obs === NOT_ASSESSED ? obs : `${obs} — ${measured}`;
+  return obs ?? measured ?? "Not recorded";
 }

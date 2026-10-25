@@ -16,7 +16,7 @@ of people use it:
 | User | What they do |
 |------|--------------|
 | **Customer / car owner** | Get an instant AI valuation, sell, buy, trade, or book an inspection. |
-| **Inspector** | Do a 148‑point vehicle inspection and generate a digital report. |
+| **Inspector** | Record a 134‑parameter, fact‑only vehicle inspection (client checklist, Oct 2026) and generate a digital report. |
 | **Dealer** | Bid on cars in private live auctions. |
 | **You (Admin)** | See and control everything from one dashboard. |
 
@@ -36,9 +36,13 @@ The core product is built and working. This is a lot of value already delivered.
 
 **Vehicle Inspection module (all 3 parts)**
 - Customer **booking wizard** (details → vehicle → location → date/time → confirm).
-- **Inspector portal**: dashboard, job details with maps, **148‑point checklist** with
-  photos, autosave, and **offline mode**.
-- **Digital report** page for the customer (score, flagged items, photos, print/PDF).
+- **Inspector portal**: dashboard, job details with maps, **client‑format checklist**
+  (12 numbered sections, 134 parameters: neutral observations, tyre DOT/tread, paint
+  thickness per panel) with photos, autosave, and **offline mode**.
+- **Digital report** page for the customer in The Wheeler Dealers document format
+  (sections 01–14, navy parameter tables, photo evidence, scope statement, print/PDF).
+  Facts only — **no pass/fail, score, percentage or verdict**: “We document the facts.
+  The customer makes the decision.”
 - **Admin jobs management**: assign/reassign inspectors, track status, revenue.
 
 **Dealer + Admin**

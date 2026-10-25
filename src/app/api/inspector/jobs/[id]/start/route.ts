@@ -38,7 +38,8 @@ export async function POST(
       label: r.label,
       order: r.order,
     }));
-    await prisma.inspectionItem.createMany({ data: rows });
+    // Idempotent under concurrent starts (e.g. a double-mounted client effect).
+    await prisma.inspectionItem.createMany({ data: rows, skipDuplicates: true });
   }
 
   // Only an active (accepted/assigned) job can move to in_progress — never

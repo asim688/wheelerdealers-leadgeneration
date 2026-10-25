@@ -1,26 +1,48 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONDITION_OPTIONS } from "@/lib/inspectionChecklist";
-import type { InspectorItem } from "@/lib/types";
+import {
+  isRecordable,
+  itemType,
+  NOT_ASSESSED,
+  optionsFor,
+  PHOTO_SECTION_TITLE,
+  VALUE_FIELDS,
+  type ItemType,
+} from "@/lib/inspectionChecklist";
+import type { InspectorItem, InspectorReportFields } from "@/lib/types";
 
 /**
- * The digital inspection form: 9 sections of points, each rated Good/Fair/Poor/
- * Fail/N-A with comments, plus a Review & Submit step. Autosaves as you go.
+ * The digital inspection form. The inspector walks the client's checklist
+ * section by section and records a neutral observation (plus measurements
+ * and photos where relevant) for every parameter — facts only, no pass/fail
+ * or verdict. Ends with a Review & Submit step that captures the Section 01
+ * vehicle details and Section 12 inspector comments. Autosaves as you go.
  */
 
 interface Answer {
   condition: string | null;
   comments: string | null;
+  value: Record<string, string> | null;
 }
 
-const CONDITION_TONE: Record<string, string> = {
-  Good: "border-green-500 bg-green-50 text-green-700",
-  Fair: "border-amber-500 bg-amber-50 text-amber-700",
-  Poor: "border-orange-500 bg-orange-50 text-orange-700",
-  Fail: "border-red-500 bg-red-50 text-red-700",
-  "N/A": "border-neutral-400 bg-neutral-100 text-neutral-600",
-};
+const EMPTY: Answer = { condition: null, comments: null, value: null };
+
+/**
+ * Report section number for the i-th checklist section. Sections 02–11 are
+ * the recorded parameters; the photo section is 13 (12 is the diagnostic scan
+ * and inspector comments captured at review).
+ */
+function sectionNumber(index: number, isPhotos: boolean): string {
+  return String(index + (isPhotos ? 3 : 2)).padStart(2, "0");
+}
+
+/** Visual tone per observation — informational, not a grade. */
+function toneFor(option: string): string {
+  if (option === NOT_ASSESSED) return "border-neutral-400 bg-neutral-100 text-neutral-600";
+  if (/damage|scratch|repaint|replaced/i.test(option)) return "border-amber-500 bg-amber-50 text-amber-800";
+  return "border-sky-600 bg-sky-50 text-sky-800";
+}
 
 export default function InspectionRunner({
   jobId,
@@ -48,6 +70,7 @@ export default function InspectionRunner({
   const [photoCounts, setPhotoCounts] = useState<Record<string, number>>({});
   const [photos, setPhotos] = useState<Array<{ url: string; caption: string | null }>>([]);
   const [photoMsg, setPhotoMsg] = useState("");
+  const [savedReport, setSavedReport] = useState<InspectorReportFields | null>(null);
 
   const pending = useRef<Record<string, Answer>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,9 +102,10 @@ export default function InspectionRunner({
           const its: InspectorItem[] = data.items;
           setItems(its);
           const ans: Record<string, Answer> = {};
-          for (const i of its) ans[i.itemKey] = { condition: i.condition, comments: i.comments };
+          for (const i of its) ans[i.itemKey] = { condition: i.condition, comments: i.comments, value: i.value ?? null };
           setAnswers(ans);
           setReadOnly(["completed", "report_submitted"].includes(data.job.status));
+          setSavedReport(data.report ?? null);
           // Map item ids -> keys to tally photos per item.
           const idToKey: Record<string, string> = {};
           for (const i of its) idToKey[i.id] = i.itemKey;
@@ -132,13 +156,21 @@ export default function InspectionRunner({
       if (!map.has(i.section)) map.set(i.section, []);
       map.get(i.section)!.push(i);
     }
-    return Array.from(map.entries()).map(([title, list]) => ({ title, list }));
+    return Array.from(map.entries()).map(([title, list]) => ({
+      title,
+      list,
+      isPhotos: title === PHOTO_SECTION_TITLE || title === "Photos",
+    }));
   }, [items]);
 
-  const total = items.length;
+  const recordableKeys = useMemo(
+    () => items.filter((i) => isRecordable(i.itemKey)).map((i) => i.itemKey),
+    [items],
+  );
+  const total = recordableKeys.length;
   const answered = useMemo(
-    () => Object.values(answers).filter((a) => a.condition && a.condition.length > 0).length,
-    [answers],
+    () => recordableKeys.filter((k) => answers[k]?.condition).length,
+    [answers, recordableKeys],
   );
 
   const flush = useCallback(async () => {
@@ -157,6 +189,7 @@ export default function InspectionRunner({
         itemKey,
         condition: batch[itemKey].condition,
         comments: batch[itemKey].comments,
+        value: batch[itemKey].value,
       }));
       // Offline: keep the queue on device and surface an offline indicator.
       if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -243,15 +276,15 @@ export default function InspectionRunner({
     timer.current = setTimeout(flush, 800);
   }
 
-  function setAnswer(itemKey: string, field: keyof Answer, value: string | null) {
+  function setAnswer(itemKey: string, patch: Partial<Answer>) {
     setAnswers((prev) => {
-      const nextAnswer = { ...(prev[itemKey] || { condition: null, comments: null }), [field]: value };
+      const nextAnswer = { ...(prev[itemKey] || EMPTY), ...patch };
       queueSave(itemKey, nextAnswer);
       return { ...prev, [itemKey]: nextAnswer };
     });
   }
 
-  async function submit(summary: string, recommendations: string, details: ReportDetails) {
+  async function submit(fields: ReportFormFields) {
     setSubmitting(true);
     setError("");
     if (timer.current) clearTimeout(timer.current);
@@ -260,7 +293,7 @@ export default function InspectionRunner({
       const res = await fetch(`/api/inspector/jobs/${jobId}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ summary, recommendations, ...details }),
+        body: JSON.stringify(fields),
       });
       const data = await res.json();
       if (res.ok && data.ok) {
@@ -304,13 +337,13 @@ export default function InspectionRunner({
                   ? "Saved ✓"
                   : saving === "offline"
                     ? "Offline — saved on device"
-                    : "points rated"}
+                    : "parameters recorded"}
             </p>
           </div>
         </div>
         {!online && (
           <div className="bg-amber-50 px-4 py-1.5 text-center text-[11px] font-medium text-amber-700">
-            You&apos;re offline. Your ratings are saved on this device and will sync automatically when the connection returns.
+            You&apos;re offline. Your entries are saved on this device and will sync automatically when the connection returns.
           </div>
         )}
         <div className="h-1 w-full bg-neutral-100">
@@ -320,10 +353,12 @@ export default function InspectionRunner({
 
       <div className="mx-auto flex w-full max-w-5xl flex-1 gap-6 px-4 py-6">
         {/* Section nav */}
-        <nav className="hidden w-48 shrink-0 lg:block">
+        <nav className="hidden w-56 shrink-0 lg:block">
           <ol className="space-y-1 text-sm">
             {sections.map((s, i) => {
-              const done = s.list.filter((it) => answers[it.itemKey]?.condition).length;
+              const done = s.isPhotos
+                ? s.list.filter((it) => photoCounts[it.itemKey]).length
+                : s.list.filter((it) => answers[it.itemKey]?.condition).length;
               return (
                 <li key={s.title}>
                   <button
@@ -332,7 +367,7 @@ export default function InspectionRunner({
                       mode === "form" && i === activeSection ? "bg-red-50 font-medium text-red-700" : "text-neutral-600 hover:bg-neutral-100"
                     }`}
                   >
-                    <span className="truncate">{i + 1}. {s.title}</span>
+                    <span className="truncate">{sectionNumber(i, s.isPhotos)}. {s.title}</span>
                     <span className="ml-2 text-[11px] text-neutral-400">{done}/{s.list.length}</span>
                   </button>
                 </li>
@@ -343,10 +378,13 @@ export default function InspectionRunner({
                 onClick={() => setMode("review")}
                 className={`w-full rounded-md px-3 py-2 text-left font-medium transition-colors ${mode === "review" ? "bg-red-50 text-red-700" : "text-neutral-600 hover:bg-neutral-100"}`}
               >
-                Review &amp; Submit
+                Vehicle details, comments &amp; submit
               </button>
             </li>
           </ol>
+          <p className="mt-4 rounded-md bg-neutral-100 px-3 py-2 text-[11px] leading-relaxed text-neutral-500">
+            Record what you observe. The report documents facts only — no pass/fail, score or recommendation.
+          </p>
         </nav>
 
         {/* Content */}
@@ -358,6 +396,7 @@ export default function InspectionRunner({
               index={activeSection}
               count={sections.length}
               items={section.list}
+              isPhotos={section.isPhotos}
               answers={answers}
               photoCounts={photoCounts}
               photoMsg={photoMsg}
@@ -375,10 +414,12 @@ export default function InspectionRunner({
             <ReviewSubmit
               sections={sections}
               answers={answers}
+              photoCounts={photoCounts}
               answered={answered}
               total={total}
               photos={photos}
               readOnly={readOnly}
+              savedReport={savedReport}
               submitting={submitting}
               error={error}
               onBack={() => setMode("form")}
@@ -399,6 +440,7 @@ function SectionForm({
   index,
   count,
   items,
+  isPhotos,
   answers,
   photoCounts,
   photoMsg,
@@ -412,11 +454,12 @@ function SectionForm({
   index: number;
   count: number;
   items: InspectorItem[];
+  isPhotos: boolean;
   answers: Record<string, Answer>;
   photoCounts: Record<string, number>;
   photoMsg: string;
   readOnly: boolean;
-  onSet: (itemKey: string, field: keyof Answer, value: string | null) => void;
+  onSet: (itemKey: string, patch: Partial<Answer>) => void;
   onUploadPhoto: (itemKey: string, file: File) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -425,18 +468,26 @@ function SectionForm({
     <div className="rounded-2xl border border-neutral-200 bg-white">
       <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
         <h2 className="font-semibold text-neutral-900">
-          <span className="text-red-600">{index + 1}.</span> {title}
+          <span className="text-red-600">{sectionNumber(index, isPhotos)}.</span> {title}
         </h2>
         <span className="text-xs text-neutral-400">Section {index + 1} of {count}</span>
       </div>
 
+      {isPhotos && (
+        <p className="mx-5 mt-3 rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+          Attach real photographs for each group. Photos of specific findings can also be added on the parameter itself.
+        </p>
+      )}
       {photoMsg && (
         <p className="mx-5 mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">{photoMsg}</p>
       )}
 
       <ul className="divide-y divide-neutral-100">
         {items.map((it) => {
-          const a = answers[it.itemKey] || { condition: null, comments: null };
+          const a = answers[it.itemKey] || EMPTY;
+          const type: ItemType = itemType(it.itemKey);
+          const options = optionsFor(type);
+          const fields = VALUE_FIELDS[type] ?? [];
           const photos = photoCounts[it.itemKey] || 0;
           return (
             <li key={it.itemKey} className="px-5 py-4">
@@ -448,31 +499,63 @@ function SectionForm({
                   onPick={(f) => onUploadPhoto(it.itemKey, f)}
                 />
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {CONDITION_OPTIONS.map((c) => {
-                  const on = a.condition === c;
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      disabled={readOnly}
-                      onClick={() => onSet(it.itemKey, "condition", on ? null : c)}
-                      className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-60 ${
-                        on ? CONDITION_TONE[c] : "border-neutral-300 text-neutral-500 hover:border-neutral-400"
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  );
-                })}
-              </div>
-              <input
-                value={a.comments || ""}
-                disabled={readOnly}
-                onChange={(e) => onSet(it.itemKey, "comments", e.target.value)}
-                placeholder="Add a comment (optional)…"
-                className="mt-2 w-full rounded-md border border-neutral-200 px-3 py-1.5 text-sm outline-none focus:border-red-400 disabled:bg-neutral-50"
-              />
+
+              {options.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {options.map((c) => {
+                    const on = a.condition === c;
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        disabled={readOnly}
+                        onClick={() => onSet(it.itemKey, { condition: on ? null : c })}
+                        className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-60 ${
+                          on ? toneFor(c) : "border-neutral-300 text-neutral-500 hover:border-neutral-400"
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {fields.length > 0 && (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {fields.map((f) => (
+                    <label key={f.key} className="block">
+                      <span className="mb-0.5 block text-[11px] text-neutral-500">
+                        {f.label}{f.unit ? ` (${f.unit})` : ""}
+                      </span>
+                      <input
+                        value={a.value?.[f.key] || ""}
+                        disabled={readOnly}
+                        inputMode="decimal"
+                        placeholder={f.placeholder}
+                        onChange={(e) => {
+                          const next = { ...(a.value || {}) };
+                          const v = e.target.value.trim();
+                          if (v) next[f.key] = v;
+                          else delete next[f.key];
+                          onSet(it.itemKey, { value: Object.keys(next).length ? next : null });
+                        }}
+                        className="w-full rounded-md border border-neutral-200 px-2.5 py-1.5 text-sm outline-none focus:border-red-400 disabled:bg-neutral-50"
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {type !== "photo" && (
+                <input
+                  value={a.comments || ""}
+                  disabled={readOnly}
+                  onChange={(e) => onSet(it.itemKey, { comments: e.target.value })}
+                  placeholder="Comment / observation (optional)…"
+                  className="mt-2 w-full rounded-md border border-neutral-200 px-3 py-1.5 text-sm outline-none focus:border-red-400 disabled:bg-neutral-50"
+                />
+              )}
             </li>
           );
         })}
@@ -483,7 +566,7 @@ function SectionForm({
           Previous
         </button>
         <button onClick={onNext} className="rounded-md bg-red-600 px-6 py-2 text-sm font-semibold text-white hover:bg-red-700">
-          {index < count - 1 ? "Save & Next" : "Review & Submit"}
+          {index < count - 1 ? "Save & Next" : "Continue to details"}
         </button>
       </div>
     </div>
@@ -526,79 +609,89 @@ function PhotoButton({ count, disabled, onPick }: { count: number; disabled?: bo
 
 // --- Review & Submit --------------------------------------------------------
 
-/** Vehicle facts observed at inspection time, printed in the customer report. */
-interface ReportDetails {
+/** Section 01 vehicle facts + Section 12 inspector comments sent on submit. */
+interface ReportFormFields {
   odometerKm: string;
   odometerStatus: string;
   exteriorColor: string;
   regionalSpecs: string;
+  engineConfig: string;
   keysCount: string;
   spareTyre: string;
-  verdict: string;
+  diagnosticScan: string;
+  summary: string;
+  limitations: string;
 }
 
-const ODOMETER_STATUS = ["Genuine", "Suspected tampering", "Not verified"];
+const ODOMETER_STATUS = [
+  "No indication of alteration observed",
+  "Indication of alteration observed",
+  "Not assessed / unavailable",
+];
 const REGIONAL_SPECS = ["GCC", "American", "Japanese", "European", "Korean", "Other"];
 const SPARE_TYRE = ["Available", "Not available", "Repair kit"];
-const VERDICTS = ["Recommended", "Recommended with repairs", "Not recommended"];
 
 function ReviewSubmit({
   sections,
   answers,
+  photoCounts,
   answered,
   total,
   photos,
   readOnly,
+  savedReport,
   submitting,
   error,
   onBack,
   onSubmit,
   onDone,
 }: {
-  sections: { title: string; list: InspectorItem[] }[];
+  sections: { title: string; list: InspectorItem[]; isPhotos: boolean }[];
   answers: Record<string, Answer>;
+  photoCounts: Record<string, number>;
   answered: number;
   total: number;
   photos: Array<{ url: string; caption: string | null }>;
   readOnly: boolean;
+  savedReport: InspectorReportFields | null;
   submitting: boolean;
   error: string;
   onBack: () => void;
-  onSubmit: (summary: string, recommendations: string, details: ReportDetails) => void;
+  onSubmit: (fields: ReportFormFields) => void;
   onDone: () => void;
 }) {
-  const [summary, setSummary] = useState("");
-  const [recommendations, setRecommendations] = useState("");
-  const [details, setDetails] = useState<ReportDetails>({
-    odometerKm: "",
-    odometerStatus: "Genuine",
-    exteriorColor: "",
-    regionalSpecs: "GCC",
-    keysCount: "",
-    spareTyre: "Available",
-    verdict: "",
+  const [fields, setFields] = useState<ReportFormFields>({
+    odometerKm: savedReport?.odometerKm != null ? String(savedReport.odometerKm) : "",
+    odometerStatus: savedReport?.odometerStatus ?? ODOMETER_STATUS[0],
+    exteriorColor: savedReport?.exteriorColor ?? "",
+    regionalSpecs: savedReport?.regionalSpecs ?? "GCC",
+    engineConfig: savedReport?.engineConfig ?? "",
+    keysCount: savedReport?.keysCount != null ? String(savedReport.keysCount) : "",
+    spareTyre: savedReport?.spareTyre ?? "Available",
+    diagnosticScan: savedReport?.diagnosticScan ?? "",
+    summary: savedReport?.summary ?? "",
+    limitations: savedReport?.limitations ?? "",
   });
-  const setD = (k: keyof ReportDetails, v: string) => setDetails((d) => ({ ...d, [k]: v }));
-  const fieldCls = "w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500";
-
-  const flagged = sections
-    .flatMap((s) => s.list)
-    .filter((it) => {
-      const c = answers[it.itemKey]?.condition;
-      return c === "Poor" || c === "Fail";
-    });
+  const setF = (k: keyof ReportFormFields, v: string) => setFields((d) => ({ ...d, [k]: v }));
+  const fieldCls = "w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500 disabled:bg-neutral-50";
+  const unrecorded = total - answered;
 
   return (
     <div className="space-y-5">
       <div className="rounded-2xl border border-neutral-200 bg-white p-5">
         <h2 className="text-lg font-bold text-neutral-900">Review &amp; Submit</h2>
         <p className="mt-1 text-sm text-neutral-500">
-          {answered} of {total} points rated.
+          {answered} of {total} parameters recorded.
+          {unrecorded > 0 && !readOnly && (
+            <span className="text-amber-700"> {unrecorded} not yet recorded — they will be listed under inspection limitations.</span>
+          )}
         </p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {sections.map((s) => {
-            const done = s.list.filter((it) => answers[it.itemKey]?.condition).length;
+            const done = s.isPhotos
+              ? s.list.filter((it) => photoCounts[it.itemKey]).length
+              : s.list.filter((it) => answers[it.itemKey]?.condition).length;
             const complete = done === s.list.length;
             return (
               <div key={s.title} className="rounded-xl border border-neutral-200 p-3">
@@ -612,18 +705,6 @@ function ReviewSubmit({
         </div>
       </div>
 
-      {flagged.length > 0 && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
-          <h3 className="text-sm font-semibold text-red-700">Flagged items ({flagged.length})</h3>
-          <ul className="mt-2 space-y-1 text-sm text-red-700">
-            {flagged.slice(0, 12).map((it) => (
-              <li key={it.itemKey}>• {it.section}: {it.label}</li>
-            ))}
-            {flagged.length > 12 && <li className="text-red-500">…and {flagged.length - 12} more</li>}
-          </ul>
-        </div>
-      )}
-
       {photos.length > 0 && (
         <div className="rounded-2xl border border-neutral-200 bg-white p-5">
           <h3 className="text-sm font-semibold text-neutral-900">Photos ({photos.length})</h3>
@@ -636,72 +717,73 @@ function ReviewSubmit({
         </div>
       )}
 
-      {!readOnly && (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-          <h3 className="text-sm font-semibold text-neutral-900">Vehicle details for the report</h3>
-          <p className="mt-0.5 text-xs text-neutral-500">Shown in the customer&apos;s Vehicle Summary.</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-600">Odometer reading (km)</span>
-              <input value={details.odometerKm} onChange={(e) => setD("odometerKm", e.target.value.replace(/\D/g, ""))} inputMode="numeric" placeholder="e.g. 55285" className={fieldCls} />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-600">Odometer status</span>
-              <select value={details.odometerStatus} onChange={(e) => setD("odometerStatus", e.target.value)} className={fieldCls}>
-                {ODOMETER_STATUS.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-600">Exterior colour</span>
-              <input value={details.exteriorColor} onChange={(e) => setD("exteriorColor", e.target.value)} placeholder="e.g. Grey" className={fieldCls} />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-600">Regional specs</span>
-              <select value={details.regionalSpecs} onChange={(e) => setD("regionalSpecs", e.target.value)} className={fieldCls}>
-                {REGIONAL_SPECS.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-600">Number of keys</span>
-              <input value={details.keysCount} onChange={(e) => setD("keysCount", e.target.value.replace(/\D/g, "").slice(0, 1))} inputMode="numeric" placeholder="e.g. 2" className={fieldCls} />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-600">Spare tyre</span>
-              <select value={details.spareTyre} onChange={(e) => setD("spareTyre", e.target.value)} className={fieldCls}>
-                {SPARE_TYRE.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </label>
-          </div>
-
-          <p className="mt-5 mb-1.5 text-sm font-medium text-neutral-700">Overall verdict</p>
-          <div className="flex flex-wrap gap-2">
-            {VERDICTS.map((v) => {
-              const on = details.verdict === v;
-              const tone = v === "Recommended" ? "border-green-600 bg-green-50 text-green-700" : v === "Not recommended" ? "border-red-600 bg-red-50 text-red-700" : "border-amber-500 bg-amber-50 text-amber-700";
-              return (
-                <button key={v} type="button" onClick={() => setD("verdict", on ? "" : v)} className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${on ? tone : "border-neutral-300 text-neutral-500 hover:border-neutral-400"}`}>
-                  {v}
-                </button>
-              );
-            })}
-          </div>
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <h3 className="text-sm font-semibold text-neutral-900">
+          <span className="text-red-600">01.</span> Vehicle identification and general details
+        </h3>
+        <p className="mt-0.5 text-xs text-neutral-500">Recorded at inspection time; make, model, year and VIN come from the booking.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">Odometer reading (km)</span>
+            <input value={fields.odometerKm} disabled={readOnly} onChange={(e) => setF("odometerKm", e.target.value.replace(/\D/g, ""))} inputMode="numeric" placeholder="e.g. 55285" className={fieldCls} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">Odometer authenticity</span>
+            <select value={fields.odometerStatus} disabled={readOnly} onChange={(e) => setF("odometerStatus", e.target.value)} className={fieldCls}>
+              {ODOMETER_STATUS.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">Exterior colour</span>
+            <input value={fields.exteriorColor} disabled={readOnly} onChange={(e) => setF("exteriorColor", e.target.value)} placeholder="e.g. Grey" className={fieldCls} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">Regional specifications</span>
+            <select value={fields.regionalSpecs} disabled={readOnly} onChange={(e) => setF("regionalSpecs", e.target.value)} className={fieldCls}>
+              {REGIONAL_SPECS.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">Engine configuration</span>
+            <input value={fields.engineConfig} disabled={readOnly} onChange={(e) => setF("engineConfig", e.target.value)} placeholder="e.g. 4-cylinder" className={fieldCls} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">Number of keys</span>
+            <input value={fields.keysCount} disabled={readOnly} onChange={(e) => setF("keysCount", e.target.value.replace(/\D/g, "").slice(0, 1))} inputMode="numeric" placeholder="e.g. 2" className={fieldCls} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">Spare tyre availability</span>
+            <select value={fields.spareTyre} disabled={readOnly} onChange={(e) => setF("spareTyre", e.target.value)} className={fieldCls}>
+              {SPARE_TYRE.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </label>
         </div>
-      )}
+      </div>
 
-      {!readOnly && (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-          <label className="mb-1.5 block text-sm font-medium text-neutral-700">Summary (optional)</label>
-          <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={3} placeholder="Overall condition summary… (auto-generated if left blank)" className="mb-4 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500" />
-          <label className="mb-1.5 block text-sm font-medium text-neutral-700">Repair recommendations (optional)</label>
-          <textarea value={recommendations} onChange={(e) => setRecommendations(e.target.value)} rows={3} placeholder="Recommended repairs… (auto-filled from flagged items if blank)" className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500" />
-        </div>
-      )}
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <h3 className="text-sm font-semibold text-neutral-900">
+          <span className="text-red-600">12.</span> Diagnostic scan and inspector comments
+        </h3>
+        <p className="mt-0.5 text-xs text-neutral-500">Factual notes only — describe what was found, not whether the vehicle should be bought.</p>
+        <label className="mt-4 block">
+          <span className="mb-1 block text-xs font-medium text-neutral-600">Diagnostic scan history</span>
+          <textarea value={fields.diagnosticScan} disabled={readOnly} onChange={(e) => setF("diagnosticScan", e.target.value)} rows={2} placeholder="e.g. One stored fault code found (module / code / status if known); or: no stored fault codes found" className={fieldCls} />
+        </label>
+        <label className="mt-3 block">
+          <span className="mb-1 block text-xs font-medium text-neutral-600">Additional observations</span>
+          <textarea value={fields.summary} disabled={readOnly} onChange={(e) => setF("summary", e.target.value)} rows={3} placeholder="e.g. All brake discs show surface scoring; see photographs." className={fieldCls} />
+        </label>
+        <label className="mt-3 block">
+          <span className="mb-1 block text-xs font-medium text-neutral-600">Inspection limitations</span>
+          <textarea value={fields.limitations} disabled={readOnly} onChange={(e) => setF("limitations", e.target.value)} rows={2} placeholder="Components not checked or not accessible and the reason (auto-filled from unrecorded parameters if left blank)" className={fieldCls} />
+        </label>
+      </div>
 
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       <div className="flex items-center justify-between gap-3">
         <button onClick={onBack} className="rounded-md px-4 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100">
-          Back to form
+          Back to checklist
         </button>
         {readOnly ? (
           <button onClick={onDone} className="rounded-md bg-neutral-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800">
@@ -709,7 +791,7 @@ function ReviewSubmit({
           </button>
         ) : (
           <button
-            onClick={() => onSubmit(summary, recommendations, details)}
+            onClick={() => onSubmit(fields)}
             disabled={submitting}
             className="rounded-md bg-red-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
           >

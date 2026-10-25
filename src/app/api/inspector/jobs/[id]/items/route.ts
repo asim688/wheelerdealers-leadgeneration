@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getInspectorId } from "@/lib/auth";
+import { itemType, optionsFor, VALUE_KEYS } from "@/lib/inspectionChecklist";
 
 export const runtime = "nodejs";
 
@@ -8,13 +10,16 @@ interface ItemPatch {
   itemKey: string;
   condition?: string | null;
   comments?: string | null;
+  value?: Record<string, unknown> | null;
 }
 
 /**
  * PATCH /api/inspector/jobs/[id]/items
  * ---------------------------------------------------------------------------
- * Autosave endpoint. Body: { items: [{ itemKey, condition?, comments? }] }.
- * Updates the matching per-job inspection items. Returns the new answered count.
+ * Autosave endpoint. Body: { items: [{ itemKey, condition?, comments?, value? }] }.
+ * `condition` must be one of the neutral observation choices for the item's
+ * type; `value` carries structured measurements (tyre DOT/tread, paint
+ * thickness). Returns the recorded count (photo slots excluded).
  */
 export async function PATCH(
   req: NextRequest,
@@ -53,6 +58,22 @@ export async function PATCH(
     const s = v.toString().trim();
     return s.length ? s.slice(0, max) : null;
   };
+  const cleanCondition = (itemKey: string, v: unknown): string | null => {
+    const s = clean(v, 60);
+    if (!s) return null;
+    return optionsFor(itemType(itemKey)).includes(s) ? s : null;
+  };
+  // Keep only known measurement keys with short string values; an empty
+  // object clears the column.
+  const cleanValue = (v: unknown): Prisma.InputJsonObject | typeof Prisma.JsonNull => {
+    if (!v || typeof v !== "object") return Prisma.JsonNull;
+    const out: Record<string, string> = {};
+    for (const [k, raw] of Object.entries(v as Record<string, unknown>)) {
+      const s = clean(raw, 20);
+      if (VALUE_KEYS.has(k) && s) out[k] = s;
+    }
+    return Object.keys(out).length ? out : Prisma.JsonNull;
+  };
 
   await prisma.$transaction(
     patches
@@ -61,8 +82,9 @@ export async function PATCH(
         prisma.inspectionItem.updateMany({
           where: { jobId: job.id, itemKey: p.itemKey },
           data: {
-            ...(p.condition !== undefined ? { condition: clean(p.condition, 20) } : {}),
+            ...(p.condition !== undefined ? { condition: cleanCondition(p.itemKey, p.condition) } : {}),
             ...(p.comments !== undefined ? { comments: clean(p.comments, 1000) } : {}),
+            ...(p.value !== undefined ? { value: cleanValue(p.value) } : {}),
           },
         }),
       ),
@@ -74,11 +96,12 @@ export async function PATCH(
     SELECT COUNT(*) FILTER (WHERE "condition" IS NOT NULL) AS answered,
            COUNT(*) AS total
     FROM "InspectionItem"
-    WHERE "jobId" = ${job.id}
+    WHERE "jobId" = ${job.id} AND "itemKey" NOT LIKE 'photos.%'
   `;
 
   return NextResponse.json({
     ok: true,
     answered: Number(tally?.answered ?? 0),
     total: Number(tally?.total ?? 0),
-  });}
+  });
+}
