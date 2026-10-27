@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { hashPassword, getAdminEmail } from "@/lib/auth";
+import { hashPassword, getAdminEmail, createCompanyUploadToken } from "@/lib/auth";
 import { sendEmail, getBaseUrl } from "@/lib/inspection";
 import { rateLimitRequest } from "@/lib/rateLimit";
 
@@ -133,6 +133,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    uploadToken: createCompanyUploadToken(company.id),
     message:
       "Application received. The Wheeler Dealers team will review your details and activate your account — you'll be notified once approved.",
   });

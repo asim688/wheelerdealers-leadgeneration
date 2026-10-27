@@ -517,8 +517,14 @@ interface AdminCompany {
   inspectorCount: number;
   jobsAssigned: number;
   jobsCompleted: number;
+  documents: Array<{ id: string; kind: string; label: string | null; fileName: string; sizeBytes: number }>;
   createdAt: string;
 }
+
+const DOC_KIND_LABEL: Record<string, string> = {
+  trade_license: "Trade License",
+  vat_certificate: "VAT Certificate",
+};
 
 function CompaniesManager({
   onClose,
@@ -604,6 +610,24 @@ function CompaniesManager({
                       {c.email}
                       {c.tradeLicense ? ` · TL: ${c.tradeLicense}` : ""}
                     </p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {c.documents.length === 0 ? (
+                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">No documents</span>
+                      ) : (
+                        c.documents.map((d) => (
+                          <a
+                            key={d.id}
+                            href={`/api/admin/companies/${c.id}/documents/${d.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={d.fileName}
+                            className="rounded border border-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-50"
+                          >
+                            {DOC_KIND_LABEL[d.kind] ?? d.label ?? d.fileName}
+                          </a>
+                        ))
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5">
                     <p className="text-neutral-700">{c.pocName || "—"}</p>

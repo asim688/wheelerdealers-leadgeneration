@@ -170,6 +170,16 @@ export function getCompanyId(req: NextRequest): string | null {
   return verifySessionToken(token);
 }
 
+/** Short-purpose token letting a just-registered (still pending) company attach documents. */
+export function createCompanyUploadToken(companyId: string): string {
+  return createSessionToken(`docs:${companyId}`);
+}
+
+export function verifyCompanyUploadToken(token?: string | null): string | null {
+  const id = verifySessionToken(token);
+  return id && id.startsWith("docs:") ? id.slice(5) : null;
+}
+
 // --- Customer (mobile OTP login) ----------------------------------------------
 
 export const CUSTOMER_COOKIE = "wd_customer";

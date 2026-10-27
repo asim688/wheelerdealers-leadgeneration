@@ -233,8 +233,26 @@ model InspectionCompany {
 
   inspectors Inspector[]
   jobs       InspectionJob[] @relation("CompanyJobs")
+  documents  CompanyDocument[]
 
   @@index([approvalStatus])
+}
+
+/// Registration documents (trade licence, VAT certificate, extras). Stored in the
+/// DB, not public blob storage, and only served to admin through an authenticated route.
+model CompanyDocument {
+  id        String   @id @default(cuid())
+  companyId String
+  company   InspectionCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kind      String   // trade_license | vat_certificate | other
+  label     String?  // free-text title for kind=other
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
 }
 
 model Inspector {

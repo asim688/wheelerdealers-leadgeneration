@@ -19,6 +19,10 @@ export async function GET(req: NextRequest) {
     orderBy: [{ approvalStatus: "asc" }, { createdAt: "desc" }],
     include: {
       _count: { select: { inspectors: true, jobs: true } },
+      documents: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, kind: true, label: true, fileName: true, sizeBytes: true },
+      },
     },
   });
 
@@ -52,6 +56,7 @@ export async function GET(req: NextRequest) {
       inspectorCount: c._count.inspectors,
       jobsAssigned: c._count.jobs,
       jobsCompleted: completedMap.get(c.id) ?? 0,
+      documents: c.documents,
       createdAt: c.createdAt.toISOString(),
     })),
   });

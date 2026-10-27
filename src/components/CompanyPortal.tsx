@@ -764,6 +764,30 @@ function CompanyLogin({
 
 const EMIRATES = ["Dubai", "Abu Dhabi", "Sharjah", "Ajman", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain"];
 
+const DOC_MAX_BYTES = 4 * 1024 * 1024;
+const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png";
+
+interface ExtraDoc {
+  id: number;
+  label: string;
+  file: File | null;
+}
+
+function FileField({ file, onChange, label }: { file: File | null; onChange: (f: File | null) => void; label: string }) {
+  return (
+    <div>
+      <label className="block cursor-pointer rounded-md border border-dashed border-neutral-300 px-3 py-3 text-sm hover:border-red-400 hover:bg-red-50/40">
+        <input type="file" accept={DOC_ACCEPT} aria-label={label} className="sr-only" onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
+        {file ? (
+          <span className="font-medium text-neutral-800">{file.name} <span className="font-normal text-neutral-400">({(file.size / 1024 / 1024).toFixed(1)} MB) · tap to change</span></span>
+        ) : (
+          <span className="text-neutral-500">Tap to attach a file <span className="text-neutral-400">(PDF, JPG or PNG, up to 4 MB)</span></span>
+        )}
+      </label>
+    </div>
+  );
+}
+
 function CompanyRegister({ onBack }: { onBack: () => void }) {
   const [form, setForm] = useState({
     name: "",
@@ -786,9 +810,18 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
     bankBranch: "",
   });
   const [areas, setAreas] = useState<string[]>([]);
+  const [tradeFile, setTradeFile] = useState<File | null>(null);
+  const [vatFile, setVatFile] = useState<File | null>(null);
+  const [extras, setExtras] = useState<ExtraDoc[]>([]);
+  const [uploadToken, setUploadToken] = useState("");
+  const [uploaded, setUploaded] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+
+  function updateExtra(id: number, patch: Partial<ExtraDoc>) {
+    setExtras((cur) => cur.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  }
 
   function set(k: keyof typeof form, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -800,16 +833,53 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    const docs: Array<{ key: string; kind: string; label: string; file: File }> = [];
+    if (!tradeFile) return setError("Please attach your Company Trade License.");
+    if (!vatFile) return setError("Please attach your VAT Certificate.");
+    docs.push({ key: "trade", kind: "trade_license", label: "Company Trade License", file: tradeFile });
+    docs.push({ key: "vat", kind: "vat_certificate", label: "VAT Certificate", file: vatFile });
+    for (const x of extras) {
+      if (!x.file) continue;
+      if (!x.label.trim()) return setError("Please name each additional document.");
+      docs.push({ key: `extra-${x.id}`, kind: "other", label: x.label.trim(), file: x.file });
+    }
+    const tooBig = docs.find((d) => d.file.size > DOC_MAX_BYTES);
+    if (tooBig) return setError(`"${tooBig.file.name}" is larger than 4 MB. Please attach a smaller file.`);
+
     setBusy(true);
     try {
-      const res = await fetch("/api/company/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, areas }),
-      });
-      const data = await res.json();
-      if (res.ok && data.ok) setDone(true);
-      else setError(data.error || "Registration failed. Please try again.");
+      let token = uploadToken;
+      if (!token) {
+        const res = await fetch("/api/company/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, areas }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) return setError(data.error || "Registration failed. Please try again.");
+        token = data.uploadToken as string;
+        setUploadToken(token);
+      }
+
+      const sent = new Set(uploaded);
+      for (const d of docs) {
+        if (sent.has(d.key)) continue;
+        const fd = new FormData();
+        fd.append("token", token);
+        fd.append("kind", d.kind);
+        fd.append("label", d.label);
+        fd.append("file", d.file);
+        const up = await fetch("/api/company/register/documents", { method: "POST", body: fd });
+        const upData = await up.json().catch(() => ({}));
+        if (!up.ok) {
+          setUploaded([...sent]);
+          return setError(`Your application is saved, but "${d.label}" could not be uploaded: ${upData.error || "please try again"}. Press Submit again to retry.`);
+        }
+        sent.add(d.key);
+      }
+      setUploaded([...sent]);
+      setDone(true);
     } catch {
       setError("Network error — please try again.");
     } finally {
@@ -878,6 +948,36 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
           <div>
             <label className={label}>Services <span className="font-normal text-neutral-400">(optional)</span></label>
             <input value={form.services} onChange={(e) => set("services", e.target.value)} className={input} placeholder="Pre-purchase inspection…" />
+          </div>
+
+          <p className={`sm:col-span-2 mt-2 ${section}`}>Company documents</p>
+          <div className="sm:col-span-2">
+            <label className={label}>Company Trade License *</label>
+            <FileField file={tradeFile} onChange={setTradeFile} label="Company Trade License" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={label}>VAT Certificate *</label>
+            <FileField file={vatFile} onChange={setVatFile} label="VAT Certificate" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={label}>Additional documents <span className="font-normal text-neutral-400">(optional)</span></label>
+            <p className="mb-2 text-xs text-neutral-500">If we need any other document, we will ask you to attach it.</p>
+            <div className="space-y-3">
+              {extras.map((x) => (
+                <div key={x.id} className="space-y-2 rounded-md border border-neutral-200 p-3">
+                  <div className="flex gap-2">
+                    <input value={x.label} onChange={(e) => updateExtra(x.id, { label: e.target.value })} maxLength={80} className={input} placeholder="Document name, e.g. Insurance certificate" />
+                    <button type="button" onClick={() => setExtras((cur) => cur.filter((y) => y.id !== x.id))} className="shrink-0 rounded-md border border-neutral-300 px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50">Remove</button>
+                  </div>
+                  <FileField file={x.file} onChange={(f) => updateExtra(x.id, { file: f })} label={x.label || "Additional document"} />
+                </div>
+              ))}
+              {extras.length < 6 && (
+                <button type="button" onClick={() => setExtras((cur) => [...cur, { id: Date.now(), label: "", file: null }])} className="rounded-md border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">
+                  + Attach another document
+                </button>
+              )}
+            </div>
           </div>
 
           <p className={`sm:col-span-2 mt-2 ${section}`}>Location</p>
