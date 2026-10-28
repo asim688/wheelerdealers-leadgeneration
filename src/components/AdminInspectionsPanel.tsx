@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import type {
   AdminInspectionsResponse,
   AdminInspectionJob,
@@ -504,20 +504,31 @@ function PricingSettings({ onClose, onUnauthorized }: { onClose: () => void; onU
 interface AdminCompany {
   id: string;
   name: string;
+  details: string | null;
   email: string;
   phone: string | null;
+  address: string | null;
   city: string | null;
   emirate: string | null;
+  lat: number | null;
+  lng: number | null;
   pocName: string | null;
   pocMobile: string | null;
+  pocEmail: string | null;
   tradeLicense: string | null;
   areas: string | null;
+  services: string | null;
+  bankAccountTitle: string | null;
+  bankAccountNumber: string | null;
+  bankIban: string | null;
+  bankName: string | null;
+  bankBranch: string | null;
   approvalStatus: string;
   active: boolean;
   inspectorCount: number;
   jobsAssigned: number;
   jobsCompleted: number;
-  documents: Array<{ id: string; kind: string; label: string | null; fileName: string; sizeBytes: number }>;
+  documents: Array<{ id: string; kind: string; label: string | null; fileName: string; sizeBytes: number; createdAt: string }>;
   createdAt: string;
 }
 
@@ -525,6 +536,10 @@ const DOC_KIND_LABEL: Record<string, string> = {
   trade_license: "Trade License",
   vat_certificate: "VAT Certificate",
 };
+
+function fmtBytes(n: number): string {
+  return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+}
 
 function CompaniesManager({
   onClose,
@@ -537,6 +552,7 @@ function CompaniesManager({
 }) {
   const [list, setList] = useState<AdminCompany[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -603,9 +619,17 @@ function CompaniesManager({
             </thead>
             <tbody>
               {list.map((c) => (
-                <tr key={c.id} className="border-b border-neutral-50 last:border-0">
+                <Fragment key={c.id}>
+                <tr className={`border-b border-neutral-50 last:border-0 ${openId === c.id ? "bg-neutral-50/60" : ""}`}>
                   <td className="px-3 py-2.5">
-                    <p className="font-medium text-neutral-800">{c.name}</p>
+                    <button
+                      type="button"
+                      onClick={() => setOpenId((cur) => (cur === c.id ? null : c.id))}
+                      className="text-left font-medium text-neutral-800 hover:text-red-600"
+                      title="View all registration details"
+                    >
+                      {c.name}
+                    </button>
                     <p className="truncate text-xs text-neutral-500">
                       {c.email}
                       {c.tradeLicense ? ` · TL: ${c.tradeLicense}` : ""}
@@ -659,6 +683,14 @@ function CompaniesManager({
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex gap-1.5">
+                      <button
+                        onClick={() => setOpenId((cur) => (cur === c.id ? null : c.id))}
+                        className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
+                          openId === c.id ? "border-neutral-800 bg-neutral-800 text-white" : "border-neutral-300 text-neutral-700 hover:bg-neutral-100"
+                        }`}
+                      >
+                        {openId === c.id ? "Hide" : "Details"}
+                      </button>
                       {c.approvalStatus === "pending" && (
                         <button onClick={() => patch(c.id, { approvalStatus: "approved" })} className="rounded-md bg-green-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-green-700">
                           Approve
@@ -685,10 +717,139 @@ function CompaniesManager({
                     </div>
                   </td>
                 </tr>
+                {openId === c.id && (
+                  <tr className="border-b border-neutral-100 bg-neutral-50/60">
+                    <td colSpan={8} className="px-3 pb-4 pt-1">
+                      {/* Fixed to the visible card width so it doesn't scroll with the wide table. */}
+                      <div className="w-[calc(100vw-22rem)] max-w-[1040px] min-w-[560px]">
+                        <CompanyDetails company={c} />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Full registration record for one company (what the company filled in) ─ */
+
+function CompanyDetails({ company: c }: { company: AdminCompany }) {
+  const mapUrl =
+    c.lat != null && c.lng != null
+      ? `https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lng}`
+      : [c.address, c.city, c.emirate].some(Boolean)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([c.address, c.city, c.emirate].filter(Boolean).join(", "))}`
+        : null;
+  const registered = new Date(c.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const hasBank = [c.bankAccountTitle, c.bankAccountNumber, c.bankIban, c.bankName, c.bankBranch].some(Boolean);
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <DetailGroup title="Company">
+        <DetailRow k="Company name" v={c.name} />
+        <DetailRow k="Company details" v={c.details} />
+        <DetailRow k="Company email" v={c.email} href={`mailto:${c.email}`} />
+        <DetailRow k="Company mobile" v={c.phone} href={c.phone ? `tel:${c.phone}` : undefined} />
+        <DetailRow k="Trade license no." v={c.tradeLicense} />
+        <DetailRow k="Services" v={c.services} />
+        <DetailRow k="Registered" v={registered} />
+        <DetailRow k="Account status" v={`${c.approvalStatus}${c.active ? "" : " · login inactive"}`} />
+      </DetailGroup>
+
+      <DetailGroup title="Company documents">
+        {c.documents.length === 0 ? (
+          <p className="text-xs text-amber-700">No documents uploaded.</p>
+        ) : (
+          <ul className="divide-y divide-neutral-100">
+            {c.documents.map((d) => (
+              <li key={d.id} className="flex items-center justify-between gap-3 py-1.5">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium text-neutral-800">{DOC_KIND_LABEL[d.kind] ?? d.label ?? "Document"}</p>
+                  <p className="truncate text-[11px] text-neutral-500">{d.fileName} · {fmtBytes(d.sizeBytes)}</p>
+                </div>
+                <a
+                  href={`/api/admin/companies/${c.id}/documents/${d.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
+                >
+                  Open
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+        {!c.documents.some((d) => d.kind === "trade_license") && <p className="mt-1 text-[11px] text-amber-700">Trade license file missing</p>}
+        {!c.documents.some((d) => d.kind === "vat_certificate") && <p className="text-[11px] text-amber-700">VAT certificate file missing</p>}
+      </DetailGroup>
+
+      <DetailGroup title="Location">
+        <DetailRow k="Address" v={c.address} />
+        <DetailRow k="City" v={c.city} />
+        <DetailRow k="Emirate" v={c.emirate} />
+        <DetailRow k="Service areas" v={c.areas} />
+        <DetailRow k="Map pin" v={c.lat != null && c.lng != null ? `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}` : null} href={mapUrl ?? undefined} />
+      </DetailGroup>
+
+      <DetailGroup title="Point of Contact (gets job alerts)">
+        <DetailRow k="PoC name" v={c.pocName} />
+        <DetailRow k="PoC mobile (WhatsApp)" v={c.pocMobile} href={c.pocMobile ? `https://wa.me/${c.pocMobile.replace(/\D/g, "")}` : undefined} />
+        <DetailRow k="PoC email" v={c.pocEmail} href={c.pocEmail ? `mailto:${c.pocEmail}` : undefined} />
+      </DetailGroup>
+
+      <DetailGroup title="Payout details">
+        {hasBank ? (
+          <>
+            <DetailRow k="Account title" v={c.bankAccountTitle} />
+            <DetailRow k="Account number" v={c.bankAccountNumber} mono />
+            <DetailRow k="IBAN" v={c.bankIban} mono />
+            <DetailRow k="Bank name" v={c.bankName} />
+            <DetailRow k="Bank branch" v={c.bankBranch} />
+          </>
+        ) : (
+          <p className="text-xs text-neutral-500">Not provided — commissions cannot be settled until the company adds bank details.</p>
+        )}
+      </DetailGroup>
+
+      <DetailGroup title="Marketplace activity">
+        <DetailRow k="Inspectors" v={String(c.inspectorCount)} />
+        <DetailRow k="Jobs assigned" v={String(c.jobsAssigned)} />
+        <DetailRow k="Jobs completed" v={String(c.jobsCompleted)} />
+      </DetailGroup>
+    </div>
+  );
+}
+
+function DetailGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-3">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function DetailRow({ k, v, href, mono = false }: { k: string; v: string | null | undefined; href?: string; mono?: boolean }) {
+  const text = v && v.trim() ? v : null;
+  return (
+    <div className="grid grid-cols-[9rem_1fr] gap-3 py-1 text-xs">
+      <span className="text-neutral-500">{k}</span>
+      {text ? (
+        href ? (
+          <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer" className={`break-words text-red-600 hover:underline ${mono ? "font-mono" : ""}`}>
+            {text}
+          </a>
+        ) : (
+          <span className={`break-words text-neutral-800 ${mono ? "font-mono" : ""}`}>{text}</span>
+        )
+      ) : (
+        <span className="text-neutral-400">—</span>
       )}
     </div>
   );
