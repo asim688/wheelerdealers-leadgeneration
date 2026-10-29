@@ -62,6 +62,7 @@ export default function InspectionRunner({
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [activeSection, setActiveSection] = useState(0);
   const [mode, setMode] = useState<"form" | "review">("form");
+  const [navOpen, setNavOpen] = useState(false);
   const [readOnly, setReadOnly] = useState(false);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved" | "offline">("idle");
   const [online, setOnline] = useState(true);
@@ -318,6 +319,65 @@ export default function InspectionRunner({
   const pct = total ? Math.round((answered / total) * 100) : 0;
   const section = sections[activeSection];
 
+  const pickSection = (i: number) => {
+    setMode("form");
+    setActiveSection(i);
+    setNavOpen(false);
+    window.scrollTo({ top: 0 });
+  };
+  const pickReview = () => {
+    setMode("review");
+    setNavOpen(false);
+    window.scrollTo({ top: 0 });
+  };
+  const sectionDone = (s: (typeof sections)[number]) =>
+    s.isPhotos
+      ? s.list.filter((it) => photoCounts[it.itemKey]).length
+      : s.list.filter((it) => answers[it.itemKey]?.condition).length;
+  const currentLabel =
+    mode === "review"
+      ? "Vehicle details, comments & submit"
+      : section
+        ? `${sectionNumber(activeSection, section.isPhotos)}. ${section.title}`
+        : "Sections";
+
+  // Shared by the desktop sidebar and the mobile dropdown.
+  const sectionList = (
+    <ol className="space-y-1 text-sm">
+      {sections.map((s, i) => {
+        const done = sectionDone(s);
+        return (
+          <li key={s.title}>
+            <button
+              onClick={() => pickSection(i)}
+              className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-left transition-colors lg:py-2 ${
+                mode === "form" && i === activeSection ? "bg-red-50 font-medium text-red-700" : "text-neutral-600 hover:bg-neutral-100"
+              }`}
+            >
+              <span className="truncate">{sectionNumber(i, s.isPhotos)}. {s.title}</span>
+              <span className={`ml-2 shrink-0 text-[11px] ${done === s.list.length ? "font-semibold text-green-600" : "text-neutral-400"}`}>
+                {done}/{s.list.length}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+      <li className="pt-2">
+        <button
+          onClick={pickReview}
+          className={`w-full rounded-md px-3 py-2.5 text-left font-medium leading-snug transition-colors lg:py-2 ${mode === "review" ? "bg-red-50 text-red-700" : "text-neutral-600 hover:bg-neutral-100"}`}
+        >
+          Vehicle details, comments &amp; submit
+        </button>
+      </li>
+    </ol>
+  );
+  const factsNote = (
+    <p className="rounded-md bg-neutral-100 px-3 py-2 text-[11px] leading-relaxed text-neutral-500">
+      Record what you observe. The report documents facts only — no pass/fail, score or recommendation.
+    </p>
+  );
+
   return (
     <div className="flex min-h-screen flex-col bg-neutral-50">
       {/* Top bar */}
@@ -346,45 +406,40 @@ export default function InspectionRunner({
             You&apos;re offline. Your entries are saved on this device and will sync automatically when the connection returns.
           </div>
         )}
+
+        {/* Phone/tablet: section switcher (the sidebar is desktop-only) */}
+        <div className="border-t border-neutral-100 lg:hidden">
+          <button
+            type="button"
+            onClick={() => setNavOpen((o) => !o)}
+            aria-expanded={navOpen}
+            className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-2.5 text-left"
+          >
+            <span className="min-w-0">
+              <span className="block text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Section — tap to switch</span>
+              <span className="block truncate text-sm font-semibold text-red-700">{currentLabel}</span>
+            </span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-neutral-500 transition-transform ${navOpen ? "rotate-180" : ""}`}>
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+          {navOpen && (
+            <div className="max-h-[65vh] overflow-y-auto border-t border-neutral-100 bg-white px-3 pb-3 pt-2">
+              {sectionList}
+              <div className="mt-3">{factsNote}</div>
+            </div>
+          )}
+        </div>
         <div className="h-1 w-full bg-neutral-100">
           <div className="h-full bg-red-600 transition-all" style={{ width: `${pct}%` }} />
         </div>
       </header>
 
       <div className="mx-auto flex w-full max-w-5xl flex-1 gap-6 px-4 py-6">
-        {/* Section nav */}
-        <nav className="hidden w-56 shrink-0 lg:block">
-          <ol className="space-y-1 text-sm">
-            {sections.map((s, i) => {
-              const done = s.isPhotos
-                ? s.list.filter((it) => photoCounts[it.itemKey]).length
-                : s.list.filter((it) => answers[it.itemKey]?.condition).length;
-              return (
-                <li key={s.title}>
-                  <button
-                    onClick={() => { setMode("form"); setActiveSection(i); }}
-                    className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors ${
-                      mode === "form" && i === activeSection ? "bg-red-50 font-medium text-red-700" : "text-neutral-600 hover:bg-neutral-100"
-                    }`}
-                  >
-                    <span className="truncate">{sectionNumber(i, s.isPhotos)}. {s.title}</span>
-                    <span className="ml-2 text-[11px] text-neutral-400">{done}/{s.list.length}</span>
-                  </button>
-                </li>
-              );
-            })}
-            <li className="pt-2">
-              <button
-                onClick={() => setMode("review")}
-                className={`w-full rounded-md px-3 py-2 text-left font-medium transition-colors ${mode === "review" ? "bg-red-50 text-red-700" : "text-neutral-600 hover:bg-neutral-100"}`}
-              >
-                Vehicle details, comments &amp; submit
-              </button>
-            </li>
-          </ol>
-          <p className="mt-4 rounded-md bg-neutral-100 px-3 py-2 text-[11px] leading-relaxed text-neutral-500">
-            Record what you observe. The report documents facts only — no pass/fail, score or recommendation.
-          </p>
+        {/* Desktop: sticky sidebar that scrolls on its own so every entry stays reachable */}
+        <nav className="sticky top-28 hidden max-h-[calc(100vh-8rem)] w-60 shrink-0 self-start overflow-y-auto pr-1 lg:block">
+          {sectionList}
+          <div className="mt-4">{factsNote}</div>
         </nav>
 
         {/* Content */}
@@ -403,11 +458,11 @@ export default function InspectionRunner({
               readOnly={readOnly}
               onSet={setAnswer}
               onUploadPhoto={uploadPhoto}
-              onPrev={() => setActiveSection((s) => Math.max(0, s - 1))}
+              onPrev={() => pickSection(Math.max(0, activeSection - 1))}
               onNext={() =>
                 activeSection < sections.length - 1
-                  ? setActiveSection((s) => s + 1)
-                  : setMode("review")
+                  ? pickSection(activeSection + 1)
+                  : pickReview()
               }
             />
           ) : (
@@ -422,7 +477,7 @@ export default function InspectionRunner({
               savedReport={savedReport}
               submitting={submitting}
               error={error}
-              onBack={() => setMode("form")}
+              onBack={() => pickSection(activeSection)}
               onSubmit={submit}
               onDone={onCompleted}
             />
