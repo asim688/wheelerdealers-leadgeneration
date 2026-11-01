@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import BrandLogo from "./BrandLogo";
 import CustomerOtpModal from "./CustomerOtpModal";
+import CustomerEmailVerifyModal from "./CustomerEmailVerifyModal";
 import BookingModeSwitch from "./BookingModeSwitch";
 import LocationPicker from "./LocationPicker";
 import { useInspectionFee } from "./useInspectionFee";
@@ -94,6 +95,7 @@ export default function InspectionBookingWizard({
   const [error, setError] = useState("");
   const [result, setResult] = useState<InspectionBookingResult | null>(null);
   const [showOtp, setShowOtp] = useState(false);
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -171,7 +173,7 @@ export default function InspectionBookingWizard({
     setStep((s) => Math.max(s - 1, 0));
   }
 
-  async function submit() {
+  async function submit(overrides?: { email?: string }) {
     setSubmitting(true);
     setError("");
     try {
@@ -181,7 +183,7 @@ export default function InspectionBookingWizard({
         body: JSON.stringify({
           customerName: customer.name.trim(),
           customerMobile: customer.mobile.trim(),
-          customerEmail: customer.email.trim(),
+          customerEmail: (overrides?.email ?? customer.email).trim(),
           vin: vehicle.vin.trim() || undefined,
           make: vehicle.make.trim() || undefined,
           model: vehicle.model.trim() || undefined,
@@ -212,6 +214,8 @@ export default function InspectionBookingWizard({
         setStep(STEPS.length); // -> confirmation screen
       } else if (res.status === 401 && data.loginRequired) {
         setShowOtp(true); // verify mobile, then retry
+      } else if (res.status === 403 && data.emailVerificationRequired) {
+        setVerifyEmail((overrides?.email ?? customer.email).trim()); // verify email once, then retry
       } else {
         setError(data.error || "Could not create your booking. Please try again.");
       }
@@ -233,6 +237,17 @@ export default function InspectionBookingWizard({
           onVerified={() => {
             setShowOtp(false);
             void submit();
+          }}
+        />
+      )}
+      {verifyEmail !== null && (
+        <CustomerEmailVerifyModal
+          email={verifyEmail}
+          onClose={() => setVerifyEmail(null)}
+          onVerified={(email) => {
+            setVerifyEmail(null);
+            setCustomer((c) => ({ ...c, email }));
+            void submit({ email });
           }}
         />
       )}
@@ -366,7 +381,7 @@ export default function InspectionBookingWizard({
                   ) : (
                     <button
                       type="button"
-                      onClick={submit}
+                      onClick={() => void submit()}
                       disabled={submitting}
                       className="rounded-md bg-red-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >

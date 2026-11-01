@@ -523,6 +523,12 @@ interface AdminCompany {
   bankIban: string | null;
   bankName: string | null;
   bankBranch: string | null;
+  emailVerifiedAt: string | null;
+  phoneVerifiedAt: string | null;
+  pocEmailVerifiedAt: string | null;
+  pocMobileVerifiedAt: string | null;
+  missingDocs: string[];
+  payoutGaps: string[];
   approvalStatus: string;
   active: boolean;
   inspectorCount: number;
@@ -535,6 +541,7 @@ interface AdminCompany {
 const DOC_KIND_LABEL: Record<string, string> = {
   trade_license: "Trade License",
   vat_certificate: "VAT Certificate",
+  iban_letter: "Bank IBAN Letter",
 };
 
 function fmtBytes(n: number): string {
@@ -569,12 +576,20 @@ function CompaniesManager({
     void load();
   }, [load]);
 
+  const [actionError, setActionError] = useState("");
+
   async function patch(id: string, body: Record<string, unknown>) {
-    await fetch(`/api/admin/companies/${id}`, {
+    setActionError("");
+    const res = await fetch(`/api/admin/companies/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    if (res.status === 401) return onUnauthorized();
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setActionError(data.error || "Could not update the company.");
+    }
     await load();
     onChanged();
   }
@@ -598,6 +613,9 @@ function CompaniesManager({
         <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700">Close</button>
       </div>
 
+      {actionError && (
+        <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</p>
+      )}
       {loading ? (
         <p className="text-sm text-neutral-400">Loading…</p>
       ) : list.length === 0 ? (
@@ -680,6 +698,11 @@ function CompaniesManager({
                     {!c.active && (
                       <span className="ml-1 rounded bg-neutral-100 px-1.5 text-[10px] text-neutral-500">inactive</span>
                     )}
+                    {c.payoutGaps.length > 0 && (
+                      <span className="mt-1 block w-fit rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title={`Missing: ${c.payoutGaps.join(", ")}`}>
+                        payout incomplete
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex gap-1.5">
@@ -754,8 +777,8 @@ function CompanyDetails({ company: c }: { company: AdminCompany }) {
       <DetailGroup title="Company">
         <DetailRow k="Company name" v={c.name} />
         <DetailRow k="Company details" v={c.details} />
-        <DetailRow k="Company email" v={c.email} href={`mailto:${c.email}`} />
-        <DetailRow k="Company mobile" v={c.phone} href={c.phone ? `tel:${c.phone}` : undefined} />
+        <DetailRow k="Company email" v={c.email} href={`mailto:${c.email}`} verifiedAt={c.emailVerifiedAt} />
+        <DetailRow k="Company mobile" v={c.phone} href={c.phone ? `tel:${c.phone}` : undefined} verifiedAt={c.phoneVerifiedAt} />
         <DetailRow k="Trade license no." v={c.tradeLicense} />
         <DetailRow k="Services" v={c.services} />
         <DetailRow k="Registered" v={registered} />
@@ -785,8 +808,9 @@ function CompanyDetails({ company: c }: { company: AdminCompany }) {
             ))}
           </ul>
         )}
-        {!c.documents.some((d) => d.kind === "trade_license") && <p className="mt-1 text-[11px] text-amber-700">Trade license file missing</p>}
-        {!c.documents.some((d) => d.kind === "vat_certificate") && <p className="text-[11px] text-amber-700">VAT certificate file missing</p>}
+        {c.missingDocs.map((m) => (
+          <p key={m} className="mt-1 text-[11px] text-amber-700">{m} missing</p>
+        ))}
       </DetailGroup>
 
       <DetailGroup title="Location">
@@ -799,11 +823,16 @@ function CompanyDetails({ company: c }: { company: AdminCompany }) {
 
       <DetailGroup title="Point of Contact (gets job alerts)">
         <DetailRow k="PoC name" v={c.pocName} />
-        <DetailRow k="PoC mobile (WhatsApp)" v={c.pocMobile} href={c.pocMobile ? `https://wa.me/${c.pocMobile.replace(/\D/g, "")}` : undefined} />
-        <DetailRow k="PoC email" v={c.pocEmail} href={c.pocEmail ? `mailto:${c.pocEmail}` : undefined} />
+        <DetailRow k="PoC mobile (WhatsApp)" v={c.pocMobile} href={c.pocMobile ? `https://wa.me/${c.pocMobile.replace(/\D/g, "")}` : undefined} verifiedAt={c.pocMobileVerifiedAt} />
+        <DetailRow k="PoC email" v={c.pocEmail} href={c.pocEmail ? `mailto:${c.pocEmail}` : undefined} verifiedAt={c.pocEmailVerifiedAt} />
       </DetailGroup>
 
       <DetailGroup title="Payout details">
+        {c.payoutGaps.length > 0 && (
+          <p className="mb-2 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+            Can&apos;t accept new jobs until complete. Missing: {c.payoutGaps.join(", ")}.
+          </p>
+        )}
         {hasBank ? (
           <>
             <DetailRow k="Account title" v={c.bankAccountTitle} />
@@ -835,11 +864,33 @@ function DetailGroup({ title, children }: { title: string; children: React.React
   );
 }
 
-function DetailRow({ k, v, href, mono = false }: { k: string; v: string | null | undefined; href?: string; mono?: boolean }) {
+function DetailRow({
+  k,
+  v,
+  href,
+  mono = false,
+  verifiedAt,
+}: {
+  k: string;
+  v: string | null | undefined;
+  href?: string;
+  mono?: boolean;
+  /** When provided (even null), shows a Verified / Not verified badge. */
+  verifiedAt?: string | null;
+}) {
   const text = v && v.trim() ? v : null;
   return (
     <div className="grid grid-cols-[9rem_1fr] gap-3 py-1 text-xs">
-      <span className="text-neutral-500">{k}</span>
+      <span className="text-neutral-500">
+        {k}
+        {verifiedAt !== undefined && text && (
+          verifiedAt ? (
+            <span className="ml-1 rounded bg-green-100 px-1 text-[10px] font-semibold text-green-700" title={`Verified ${new Date(verifiedAt).toLocaleString("en-GB")}`}>✓ verified</span>
+          ) : (
+            <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-700">not verified</span>
+          )
+        )}
+      </span>
       {text ? (
         href ? (
           <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer" className={`break-words text-red-600 hover:underline ${mono ? "font-mono" : ""}`}>

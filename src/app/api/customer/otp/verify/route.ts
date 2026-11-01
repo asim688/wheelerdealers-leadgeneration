@@ -87,16 +87,15 @@ export async function POST(req: NextRequest) {
   await prisma.otpCode.deleteMany({ where: { mobile } });
   const customer = await prisma.customer.upsert({
     where: { mobile },
+    // Email is only ever stored through /api/customer/email (verified by code).
     create: {
       mobile,
       name: (body.name ?? "").trim() || null,
-      email: (body.email ?? "").trim().toLowerCase() || null,
       lastLogin: new Date(),
     },
     update: {
       lastLogin: new Date(),
       ...((body.name ?? "").trim() ? { name: body.name!.trim() } : {}),
-      ...((body.email ?? "").trim() ? { email: body.email!.trim().toLowerCase() } : {}),
     },
   });
 

@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   }
   const customer = await prisma.customer.findUnique({
     where: { id: customerId },
-    select: { id: true, mobile: true, name: true, email: true },
+    select: { id: true, mobile: true, name: true, email: true, emailVerifiedAt: true },
   });
   if (!customer) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });

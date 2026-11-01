@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCompanyId } from "@/lib/auth";
 import { getInspectionPricing, sendEmail } from "@/lib/inspection";
+import { companyPayoutGaps, PAYOUT_BLOCK_MESSAGE } from "@/lib/companyCompliance";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,15 @@ export async function POST(
   if (!company || !company.active || company.approvalStatus !== "approved") {
     return NextResponse.json(
       { error: "Your company is not approved to accept jobs." },
+      { status: 403 },
+    );
+  }
+
+  // Payouts need bank details + the Bank IBAN Letter on file.
+  const gaps = await companyPayoutGaps(company.id);
+  if (!gaps || gaps.length > 0) {
+    return NextResponse.json(
+      { error: PAYOUT_BLOCK_MESSAGE, payoutIncomplete: true, missing: gaps ?? [] },
       { status: 403 },
     );
   }

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import BrandLogo from "./BrandLogo";
+import VerifyField from "./VerifyField";
+import { normaliseEmail, normaliseIban, normaliseUaeMobile, verificationKey } from "@/lib/contactValidation";
 
 // --- local types matching /api/company/* responses ---------------------------
 
@@ -19,6 +21,10 @@ interface CompanyProfile {
   pocEmail: string | null;
   approvalStatus: string;
   active: boolean;
+  bank?: { bankAccountTitle: string | null; bankAccountNumber: string | null; bankIban: string | null; bankName: string | null; bankBranch: string | null };
+  hasIbanLetter?: boolean;
+  /** What is still missing before the company can accept jobs (empty = complete). */
+  payoutGaps?: string[];
 }
 
 interface CompanyStats {
@@ -62,6 +68,7 @@ interface CompanyInspector {
   email: string;
   phone: string | null;
   active: boolean;
+  verified?: boolean;
   jobCount: number;
 }
 
@@ -137,6 +144,10 @@ export default function CompanyPortal() {
 
   useEffect(() => {
     (async () => {
+      if (new URLSearchParams(window.location.search).get("register") === "1") {
+        setView("register");
+        return;
+      }
       try {
         const res = await fetch("/api/company/me");
         if (res.ok) {
@@ -270,6 +281,9 @@ export default function CompanyPortal() {
         <main className="w-full flex-1 p-4 sm:p-6">
           {notice && (
             <p className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{notice}</p>
+          )}
+          {company && (company.payoutGaps?.length ?? 0) > 0 && (
+            <PayoutDetailsCard company={company} onSaved={(c) => setCompany(c)} />
           )}
           {tab === "available" ? (
             <LiveJobsPanel jobs={pool} loading={loading} onAccept={acceptJob} onRefresh={() => void loadAll(tab)} />
@@ -590,9 +604,13 @@ function InspectorsPanel({
           <div className="grid gap-3 sm:grid-cols-2">
             <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required placeholder="Inspector name *" className={input} />
             <input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} type="email" required placeholder="Email *" className={input} />
-            <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="Mobile (optional)" className={input} />
+            <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} required type="tel" placeholder="Mobile * (UAE, 05X XXX XXXX)" className={input} />
             <input value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} type="password" required minLength={6} placeholder="Password * (min 6)" className={input} />
           </div>
+          <p className="mt-3 text-xs text-neutral-500">
+            The inspector gets an email with sign-in instructions and must verify their own email and mobile
+            (6-digit codes) the first time they sign in, before they can see any jobs. Share the password with them yourself.
+          </p>
           {error && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
           <button type="submit" disabled={busy} className="mt-4 rounded-md bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
             {busy ? "Creating…" : "Create inspector"}
@@ -617,6 +635,14 @@ function InspectorsPanel({
                   </p>
                 </div>
                 <span className="text-xs text-neutral-500">{i.jobCount} job{i.jobCount === 1 ? "" : "s"}</span>
+                {i.verified === false && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700" title="Verifies email and mobile at first sign-in">
+                    Verification pending
+                  </span>
+                )}
+                {i.verified && (
+                  <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Verified ✓</span>
+                )}
                 <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${i.active ? "bg-green-100 text-green-700" : "bg-neutral-100 text-neutral-500"}`}>
                   {i.active ? "Active" : "Disabled"}
                 </span>
@@ -631,6 +657,106 @@ function InspectorsPanel({
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+// --- Payout details (existing companies missing bank details / IBAN letter) ------
+
+function PayoutDetailsCard({ company, onSaved }: { company: CompanyProfile; onSaved: (c: CompanyProfile) => void }) {
+  const bank = company.bank;
+  const bankComplete = !!bank && [bank.bankAccountTitle, bank.bankAccountNumber, bank.bankIban, bank.bankName, bank.bankBranch].every(Boolean);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<BankForm>({
+    bankAccountTitle: bank?.bankAccountTitle ?? "",
+    bankAccountNumber: bank?.bankAccountNumber ?? "",
+    bankIban: bank?.bankIban ?? "",
+    bankName: bank?.bankName ?? "",
+    bankBranch: bank?.bankBranch ?? "",
+  });
+  const [ibanFile, setIbanFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const set = (k: keyof BankForm, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const input = "w-full rounded-md border border-neutral-300 px-3 py-2.5 text-sm outline-none focus:border-red-500";
+  const label = "mb-1.5 block text-sm font-medium text-neutral-700";
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!bankComplete && !normaliseIban(form.bankIban)) return setError("Please enter a valid UAE IBAN (AE followed by 21 digits).");
+    if (!company.hasIbanLetter && !ibanFile) return setError("Please attach your Bank IBAN Letter.");
+    if (ibanFile && ibanFile.size > DOC_MAX_BYTES) return setError("The IBAN letter must be under 4 MB.");
+    setBusy(true);
+    try {
+      let latest: CompanyProfile | null = null;
+      if (!bankComplete) {
+        const res = await fetch("/api/company/me", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return setError(data.error || "Could not save bank details.");
+        latest = data.company;
+      }
+      if (!company.hasIbanLetter && ibanFile) {
+        const fd = new FormData();
+        fd.append("kind", "iban_letter");
+        fd.append("label", "Bank IBAN Letter");
+        fd.append("file", ibanFile);
+        const up = await fetch("/api/company/register/documents", { method: "POST", body: fd });
+        const upData = await up.json().catch(() => ({}));
+        if (!up.ok) return setError(upData.error || "Could not upload the IBAN letter.");
+      }
+      const me = await fetch("/api/company/me");
+      if (me.ok) latest = (await me.json()).company;
+      if (latest) onSaved(latest);
+      setOpen(false);
+    } catch {
+      setError("Network error — please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-amber-900">Add your payout details to accept new jobs</p>
+          <p className="mt-1 text-sm text-amber-800">
+            Bank details and a Bank IBAN Letter are now required for every company. Still missing:{" "}
+            <b>{company.payoutGaps?.join(", ")}</b>.
+          </p>
+        </div>
+        <button onClick={() => setOpen((o) => !o)} className="shrink-0 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">
+          {open ? "Close" : "Add payout details"}
+        </button>
+      </div>
+      {open && (
+        <form onSubmit={save} className="mt-4 rounded-xl border border-amber-200 bg-white p-4">
+          {bankComplete ? (
+            <p className="mb-3 text-sm text-neutral-600">Your bank details are on file. Only the IBAN letter is missing.</p>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <BankFields form={form} set={set} input={input} label={label} />
+            </div>
+          )}
+          {!company.hasIbanLetter && (
+            <div className="mt-4">
+              <label className={label}>Bank IBAN Letter *</label>
+              <FileField file={ibanFile} onChange={setIbanFile} label="Bank IBAN Letter" />
+            </div>
+          )}
+          {error && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          <button type="submit" disabled={busy} className="mt-4 rounded-md bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+            {busy ? "Saving…" : "Save payout details"}
+          </button>
+          <p className="mt-2 text-xs text-neutral-500">Once saved, changes to bank details go through The Wheeler Dealers team.</p>
+        </form>
+      )}
     </div>
   );
 }
@@ -788,6 +914,55 @@ function FileField({ file, onChange, label }: { file: File | null; onChange: (f:
   );
 }
 
+type BankForm = {
+  bankAccountTitle: string;
+  bankAccountNumber: string;
+  bankIban: string;
+  bankName: string;
+  bankBranch: string;
+};
+
+/** The five mandatory bank fields (registration + "complete payout details"). */
+function BankFields<T extends BankForm>({
+  form,
+  set,
+  input,
+  label,
+}: {
+  form: T;
+  set: (k: keyof BankForm, v: string) => void;
+  input: string;
+  label: string;
+}) {
+  const ibanTyped = form.bankIban.trim().length > 0;
+  const ibanOk = !!normaliseIban(form.bankIban);
+  return (
+    <>
+      <div className="sm:col-span-2">
+        <label className={label}>Account title *</label>
+        <input value={form.bankAccountTitle} onChange={(e) => set("bankAccountTitle", e.target.value)} required className={input} placeholder="Company account holder name" />
+      </div>
+      <div>
+        <label className={label}>Account number *</label>
+        <input value={form.bankAccountNumber} onChange={(e) => set("bankAccountNumber", e.target.value.replace(/[^\d\s]/g, ""))} required inputMode="numeric" className={input} placeholder="1234567890" />
+      </div>
+      <div>
+        <label className={label}>IBAN *</label>
+        <input value={form.bankIban} onChange={(e) => set("bankIban", e.target.value.toUpperCase())} required className={`${input} ${ibanTyped ? (ibanOk ? "border-green-400" : "border-amber-400") : ""}`} placeholder="AE07 0331 2345 6789 0123 456" />
+        {ibanTyped && !ibanOk && <p className="mt-1 text-xs text-amber-700">UAE IBAN: AE + 21 digits (23 characters).</p>}
+      </div>
+      <div>
+        <label className={label}>Bank name *</label>
+        <input value={form.bankName} onChange={(e) => set("bankName", e.target.value)} required className={input} placeholder="Emirates NBD" />
+      </div>
+      <div>
+        <label className={label}>Bank branch *</label>
+        <input value={form.bankBranch} onChange={(e) => set("bankBranch", e.target.value)} required className={input} placeholder="Deira, Dubai" />
+      </div>
+    </>
+  );
+}
+
 function CompanyRegister({ onBack }: { onBack: () => void }) {
   const [form, setForm] = useState({
     name: "",
@@ -812,6 +987,9 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
   const [areas, setAreas] = useState<string[]>([]);
   const [tradeFile, setTradeFile] = useState<File | null>(null);
   const [vatFile, setVatFile] = useState<File | null>(null);
+  const [ibanFile, setIbanFile] = useState<File | null>(null);
+  const [proofs, setProofs] = useState<Record<string, string>>({});
+  const addProof = (k: string, p: string) => setProofs((cur) => ({ ...cur, [k]: p }));
   const [extras, setExtras] = useState<ExtraDoc[]>([]);
   const [uploadToken, setUploadToken] = useState("");
   const [uploaded, setUploaded] = useState<string[]>([]);
@@ -834,11 +1012,26 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
     e.preventDefault();
     setError("");
 
+    // Every email / mobile must be verified (a value used twice needs one verification).
+    const contacts: Array<[string, string | null, string]> = [
+      ["email", normaliseEmail(form.email), "company email"],
+      ["sms", normaliseUaeMobile(form.phone), "company mobile"],
+      ["email", normaliseEmail(form.pocEmail), "point of contact email"],
+      ["sms", normaliseUaeMobile(form.pocMobile), "point of contact mobile"],
+    ];
+    const notVerified = contacts
+      .filter(([ch, v]) => !v || !proofs[verificationKey(ch as "email" | "sms", v)])
+      .map(([, , name]) => name);
+    if (notVerified.length) return setError(`Please verify: ${notVerified.join(", ")} (use "Send code" next to each field).`);
+    if (!normaliseIban(form.bankIban)) return setError("Please enter a valid UAE IBAN (AE followed by 21 digits).");
+
     const docs: Array<{ key: string; kind: string; label: string; file: File }> = [];
     if (!tradeFile) return setError("Please attach your Company Trade License.");
     if (!vatFile) return setError("Please attach your VAT Certificate.");
+    if (!ibanFile) return setError("Please attach your Bank IBAN Letter.");
     docs.push({ key: "trade", kind: "trade_license", label: "Company Trade License", file: tradeFile });
     docs.push({ key: "vat", kind: "vat_certificate", label: "VAT Certificate", file: vatFile });
+    docs.push({ key: "iban", kind: "iban_letter", label: "Bank IBAN Letter", file: ibanFile });
     for (const x of extras) {
       if (!x.file) continue;
       if (!x.label.trim()) return setError("Please name each additional document.");
@@ -854,7 +1047,7 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
         const res = await fetch("/api/company/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...form, areas }),
+          body: JSON.stringify({ ...form, areas, proofs: Object.values(proofs) }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) return setError(data.error || "Registration failed. Please try again.");
@@ -894,9 +1087,10 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
           <p className="text-4xl">✅</p>
           <h2 className="mt-3 text-lg font-bold text-neutral-900">Application submitted</h2>
           <p className="mt-2 text-sm text-neutral-600">
-            Thank you! The Wheeler Dealers team will review your company details. You&apos;ll be
-            notified once your account is approved — then your Point of Contact starts receiving
-            live job alerts.
+            Thank you! The Wheeler Dealers team will review your company details and documents.
+            We&apos;ve emailed a confirmation to {form.email.trim().toLowerCase()} — you&apos;ll get a
+            welcome email once your account is approved, and then your Point of Contact starts
+            receiving live job alerts.
           </p>
           <button onClick={onBack} className="mt-6 rounded-md bg-red-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-red-700">
             Back to sign in
@@ -929,13 +1123,11 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
             <label className={label}>Company details <span className="font-normal text-neutral-400">(optional)</span></label>
             <input value={form.details} onChange={(e) => set("details", e.target.value)} className={input} placeholder="Short description of your company" />
           </div>
-          <div>
-            <label className={label}>Company email *</label>
-            <input value={form.email} onChange={(e) => set("email", e.target.value)} type="email" required className={input} placeholder="ops@company.ae" />
+          <div className="sm:col-span-2">
+            <VerifyField channel="email" id="reg-email" label="Company email *" value={form.email} onChange={(v) => set("email", v)} proofs={proofs} onProof={addProof} required placeholder="ops@company.ae" />
           </div>
-          <div>
-            <label className={label}>Company mobile *</label>
-            <input value={form.phone} onChange={(e) => set("phone", e.target.value)} required className={input} placeholder="+9715xxxxxxxx" />
+          <div className="sm:col-span-2">
+            <VerifyField channel="sms" id="reg-phone" label="Company mobile * (UAE)" value={form.phone} onChange={(v) => set("phone", v)} proofs={proofs} onProof={addProof} required placeholder="05X XXX XXXX" />
           </div>
           <div className="sm:col-span-2">
             <label className={label}>Password * <span className="font-normal text-neutral-400">(min 6 characters)</span></label>
@@ -1019,39 +1211,24 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
           </div>
 
           <p className={`sm:col-span-2 mt-2 ${section}`}>Point of Contact (gets job alerts)</p>
-          <div>
+          <div className="sm:col-span-2">
             <label className={label}>PoC name *</label>
             <input value={form.pocName} onChange={(e) => set("pocName", e.target.value)} required className={input} placeholder="Full name" />
           </div>
-          <div>
-            <label className={label}>PoC mobile * <span className="font-normal text-neutral-400">(WhatsApp)</span></label>
-            <input value={form.pocMobile} onChange={(e) => set("pocMobile", e.target.value)} required className={input} placeholder="+9715xxxxxxxx" />
+          <div className="sm:col-span-2">
+            <VerifyField channel="sms" id="reg-poc-mobile" label={<>PoC mobile * <span className="font-normal text-neutral-400">(UAE, WhatsApp)</span></>} value={form.pocMobile} onChange={(v) => set("pocMobile", v)} proofs={proofs} onProof={addProof} required placeholder="05X XXX XXXX" />
           </div>
           <div className="sm:col-span-2">
-            <label className={label}>PoC email <span className="font-normal text-neutral-400">(optional)</span></label>
-            <input value={form.pocEmail} onChange={(e) => set("pocEmail", e.target.value)} type="email" className={input} placeholder="poc@company.ae" />
+            <VerifyField channel="email" id="reg-poc-email" label="PoC email *" value={form.pocEmail} onChange={(v) => set("pocEmail", v)} proofs={proofs} onProof={addProof} required placeholder="poc@company.ae" />
+            <p className="mt-1 text-xs text-neutral-500">If the PoC uses the company email or mobile, it is verified automatically.</p>
           </div>
 
-          <p className={`sm:col-span-2 mt-2 ${section}`}>Payout details (optional)</p>
+          <p className={`sm:col-span-2 mt-2 ${section}`}>Payout details (bank account)</p>
+          <BankFields form={form} set={set} input={input} label={label} />
           <div className="sm:col-span-2">
-            <label className={label}>Account title</label>
-            <input value={form.bankAccountTitle} onChange={(e) => set("bankAccountTitle", e.target.value)} className={input} placeholder="Company account holder name" />
-          </div>
-          <div>
-            <label className={label}>Account number</label>
-            <input value={form.bankAccountNumber} onChange={(e) => set("bankAccountNumber", e.target.value)} className={input} placeholder="1234567890" />
-          </div>
-          <div>
-            <label className={label}>IBAN</label>
-            <input value={form.bankIban} onChange={(e) => set("bankIban", e.target.value)} className={input} placeholder="AE07 0331 …" />
-          </div>
-          <div>
-            <label className={label}>Bank name</label>
-            <input value={form.bankName} onChange={(e) => set("bankName", e.target.value)} className={input} placeholder="Emirates NBD" />
-          </div>
-          <div>
-            <label className={label}>Bank branch</label>
-            <input value={form.bankBranch} onChange={(e) => set("bankBranch", e.target.value)} className={input} placeholder="Deira, Dubai" />
+            <label className={label}>Bank IBAN Letter *</label>
+            <p className="mb-2 text-xs text-neutral-500">Letter or certificate from your bank showing the account title and IBAN.</p>
+            <FileField file={ibanFile} onChange={setIbanFile} label="Bank IBAN Letter" />
           </div>
         </div>
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/auth";
-import { sendEmail, getBaseUrl } from "@/lib/inspection";
+import { missingDocs, payoutGaps, sendCompanyWelcomeEmail } from "@/lib/companyCompliance";
 
 export const runtime = "nodejs";
 
@@ -13,7 +13,9 @@ const APPROVAL_STATUSES = ["pending", "approved", "suspended"];
  * Manage an inspection company (Super Admin only):
  * - { active: boolean }         activate / deactivate the login
  * - { approvalStatus: string }  approve / suspend / back to pending
- * Approving emails the company that they can start receiving jobs.
+ * Approving a NEW application requires its documents (trade licence, VAT
+ * certificate, Bank IBAN Letter) and bank details; the first approval emails
+ * the welcome message to the registered email and the PoC email.
  */
 export async function PATCH(
   req: NextRequest,
@@ -48,24 +50,31 @@ export async function PATCH(
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
 
-  const existing = await prisma.inspectionCompany.findUnique({ where: { id } });
+  const existing = await prisma.inspectionCompany.findUnique({
+    where: { id },
+    include: { documents: { select: { kind: true } } },
+  });
   if (!existing) {
     return NextResponse.json({ error: "Company not found." }, { status: 404 });
   }
 
+  // A pending application can only be approved once it is complete.
+  if (data.approvalStatus === "approved" && existing.approvalStatus === "pending") {
+    const kinds = existing.documents.map((d) => d.kind);
+    const gaps = [...missingDocs(kinds), ...payoutGaps(existing, kinds).filter((g) => g !== "Bank IBAN Letter")];
+    if (gaps.length > 0) {
+      return NextResponse.json(
+        { error: `Cannot approve yet — missing: ${gaps.join(", ")}. Ask the company to complete its application.` },
+        { status: 400 },
+      );
+    }
+  }
+
   const company = await prisma.inspectionCompany.update({ where: { id }, data });
 
-  // First-time approval → welcome the company.
-  if (data.approvalStatus === "approved" && existing.approvalStatus !== "approved") {
-    await sendEmail(
-      company.email,
-      "Your company is approved — The Wheeler Dealers",
-      `<p>Salaam ${company.pocName ?? company.name},</p>
-<p>Your inspection company <b>${company.name}</b> has been approved on The Wheeler Dealers marketplace.</p>
-<p>You can now sign in, add your inspectors, and accept live jobs:</p>
-<p><a href="${getBaseUrl()}/company">${getBaseUrl()}/company</a></p>
-<p>Your Point of Contact (${company.pocMobile ?? company.phone}) will receive an alert whenever a new job goes live.</p>`,
-    );
+  // First-time approval → welcome email ("successfully registered") to company + PoC.
+  if (data.approvalStatus === "approved" && existing.approvalStatus === "pending") {
+    await sendCompanyWelcomeEmail(company);
   }
 
   return NextResponse.json({

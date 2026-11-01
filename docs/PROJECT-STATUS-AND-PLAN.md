@@ -44,6 +44,11 @@ The core product is built and working. This is a lot of value already delivered.
   Facts only — **no pass/fail, score, percentage or verdict**: “We document the facts.
   The customer makes the decision.”
 - **Admin jobs management**: assign/reassign inspectors, track status, revenue.
+- **Email + mobile verification (6-digit codes)** for all three account types:
+  company (company email/mobile + PoC email/mobile at registration, plus mandatory
+  bank details and Bank IBAN Letter), inspector (own email/mobile at first sign-in,
+  jobs locked until done) and customer (mobile OTP + email once per account before
+  booking). UAE mobiles only; companies without payout details can't accept jobs.
 
 **Dealer + Admin**
 - Dealer portal: register → admin approval → **live auctions** → bidding.

@@ -11,6 +11,8 @@ import {
 } from "@/lib/inspection";
 import { isStripeConfigured, createCheckoutSession } from "@/lib/payments";
 import { getCustomerId } from "@/lib/auth";
+import { normaliseEmail } from "@/lib/contactValidation";
+import { normaliseMobile } from "@/lib/phone";
 import type { InspectionBookingInput, InspectionBookingResult } from "@/lib/types";
 
 // Prisma requires the Node.js runtime (not Edge).
@@ -74,6 +76,38 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Both contact details on the booking must be verified: the mobile is the
+  // one the customer signed in with (OTP) and the email was verified by code.
+  let bookingMobile = customerMobile!;
+  let bookingEmail = customerEmail!.toLowerCase();
+  if (customerId) {
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { mobile: true, email: true, emailVerifiedAt: true },
+    });
+    if (!customer) {
+      return NextResponse.json(
+        { error: "Please sign in with your mobile number before booking.", loginRequired: true },
+        { status: 401 },
+      );
+    }
+    if (normaliseMobile(customerMobile!) !== customer.mobile) {
+      return NextResponse.json(
+        { error: "Please verify this mobile number before booking.", loginRequired: true },
+        { status: 401 },
+      );
+    }
+    const email = normaliseEmail(customerEmail);
+    if (!email || customer.email !== email || !customer.emailVerifiedAt) {
+      return NextResponse.json(
+        { error: "Please verify your email address before booking.", emailVerificationRequired: true, email: email ?? customerEmail },
+        { status: 403 },
+      );
+    }
+    bookingMobile = customer.mobile;
+    bookingEmail = email;
+  }
+
   try {
     const jobCode = await generateJobCode();
     const { customerPrice } = await getInspectionPricing();
@@ -82,8 +116,8 @@ export async function POST(req: NextRequest) {
         jobCode,
         status: "payment_pending",
         customerName: customerName!,
-        customerMobile: customerMobile!,
-        customerEmail: customerEmail!,
+        customerMobile: bookingMobile,
+        customerEmail: bookingEmail,
         vin: clean(body.vin) || null,
         make: clean(body.make) || null,
         model: clean(body.model) || null,

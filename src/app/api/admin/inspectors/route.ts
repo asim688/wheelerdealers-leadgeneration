@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAdmin, hashPassword } from "@/lib/auth";
+import { normaliseEmail, normaliseUaeMobile } from "@/lib/contactValidation";
+import { sendInspectorAddedEmail } from "@/lib/companyCompliance";
 
 export const runtime = "nodejs";
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** GET /api/admin/inspectors — roster with active jobs count (admin only). */
 export async function GET(req: NextRequest) {
@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
       email: true,
       phone: true,
       active: true,
+      emailVerifiedAt: true,
+      phoneVerifiedAt: true,
       approvalStatus: true,
       contactPerson: true,
       tradeLicense: true,
@@ -35,6 +37,7 @@ export async function GET(req: NextRequest) {
       email: i.email,
       phone: i.phone,
       active: i.active,
+      verified: !!(i.emailVerifiedAt && i.phoneVerifiedAt),
       approvalStatus: i.approvalStatus,
       contactPerson: i.contactPerson,
       tradeLicense: i.tradeLicense,
@@ -58,14 +61,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const name = (body.name ?? "").trim();
-  const email = (body.email ?? "").trim().toLowerCase();
+  const name = (body.name ?? "").trim().slice(0, 120);
+  const email = normaliseEmail(body.email);
   const password = body.password ?? "";
-  const phone = (body.phone ?? "").trim() || null;
+  const phone = normaliseUaeMobile(body.phone);
 
-  if (!name || !EMAIL_RE.test(email) || password.length < 6) {
+  if (!name || !email || !phone || password.length < 6) {
     return NextResponse.json(
-      { error: "Name, a valid email and a password (6+ chars) are required." },
+      { error: "Name, a valid email, a UAE mobile number and a password (6+ chars) are required." },
       { status: 400 },
     );
   }
@@ -79,5 +82,6 @@ export async function POST(req: NextRequest) {
     data: { name, email, phone, passwordHash: hashPassword(password), active: true, approvalStatus: "approved" },
     select: { id: true, name: true, email: true, phone: true, active: true },
   });
+  await sendInspectorAddedEmail({ name: inspector.name, email: inspector.email, companyName: null });
   return NextResponse.json({ ok: true, inspector });
 }

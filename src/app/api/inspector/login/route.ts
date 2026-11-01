@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   verifyPassword,
   createInspectorToken,
+  createPendingInspectorToken,
   INSPECTOR_COOKIE,
   sessionCookieOptions,
   SESSION_MAX_AGE,
@@ -54,12 +55,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Until the inspector has verified their own email + mobile, the session is
+  // restricted to the verification step (job APIs reject it).
+  const verified = !!(inspector.emailVerifiedAt && inspector.phoneVerifiedAt);
   const res = NextResponse.json({
-    inspector: { id: inspector.id, name: inspector.name, email: inspector.email },
+    inspector: { id: inspector.id, name: inspector.name, email: inspector.email, phone: inspector.phone },
+    needsVerification: !verified,
   });
   res.cookies.set(
     INSPECTOR_COOKIE,
-    createInspectorToken(inspector.id),
+    verified ? createInspectorToken(inspector.id) : createPendingInspectorToken(inspector.id),
     sessionCookieOptions(SESSION_MAX_AGE),
   );
   return res;

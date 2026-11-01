@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import BrandLogo from "./BrandLogo";
 import InspectionRunner from "./InspectionRunner";
+import VerifyField from "./VerifyField";
+import { normaliseEmail, normaliseUaeMobile, verificationKey } from "@/lib/contactValidation";
 import type {
   AvailableJob,
   InspectorJob,
@@ -12,7 +14,7 @@ import type {
   InspectorStats,
 } from "@/lib/types";
 
-type View = "loading" | "login" | "register" | "dashboard" | "job" | "inspect";
+type View = "loading" | "login" | "verify" | "dashboard" | "job" | "inspect";
 type Filter = "all" | "available" | "open" | "today" | "completed" | "payments";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -95,6 +97,10 @@ export default function InspectorPortal() {
         if (res.ok) {
           const data = await res.json();
           setInspector(data.inspector);
+          if (data.needsVerification) {
+            setView("verify");
+            return;
+          }
           setView("dashboard");
           await loadJobs("all");
         } else {
@@ -106,8 +112,12 @@ export default function InspectorPortal() {
     })();
   }, [loadJobs]);
 
-  async function onLoggedIn(profile: InspectorProfile) {
+  async function onLoggedIn(profile: InspectorProfile, needsVerification = false) {
     setInspector(profile);
+    if (needsVerification) {
+      setView("verify");
+      return;
+    }
     setView("dashboard");
     await loadJobs("all");
   }
@@ -144,11 +154,11 @@ export default function InspectorPortal() {
   }
 
   if (view === "login") {
-    return <LoginForm onLoggedIn={onLoggedIn} onRegister={() => setView("register")} />;
+    return <LoginForm onLoggedIn={onLoggedIn} />;
   }
 
-  if (view === "register") {
-    return <RegisterForm onBack={() => setView("login")} />;
+  if (view === "verify" && inspector) {
+    return <VerifyAccount inspector={inspector} onVerified={(p) => void onLoggedIn(p)} onLogout={logout} />;
   }
 
   if (view === "inspect" && activeJob) {
@@ -591,7 +601,7 @@ function JobDetail({
 
 // --- Login ------------------------------------------------------------------
 
-function LoginForm({ onLoggedIn, onRegister }: { onLoggedIn: (p: InspectorProfile) => void; onRegister: () => void }) {
+function LoginForm({ onLoggedIn }: { onLoggedIn: (p: InspectorProfile, needsVerification?: boolean) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -609,7 +619,7 @@ function LoginForm({ onLoggedIn, onRegister }: { onLoggedIn: (p: InspectorProfil
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (res.ok && data.inspector) onLoggedIn(data.inspector);
+      if (res.ok && data.inspector) onLoggedIn(data.inspector, !!data.needsVerification);
       else setError(data.error || "Login failed.");
     } catch {
       setError("Network error — please try again.");
@@ -635,9 +645,9 @@ function LoginForm({ onLoggedIn, onRegister }: { onLoggedIn: (p: InspectorProfil
         </button>
         <p className="mt-4 text-center text-sm text-neutral-500">
           New inspection company?{" "}
-          <button type="button" onClick={onRegister} className="font-semibold text-red-600 hover:underline">
+          <Link href="/company?register=1" className="font-semibold text-red-600 hover:underline">
             Apply to join
-          </button>
+          </Link>
         </p>
         {isDev && (
           <p className="mt-4 text-center text-[11px] text-neutral-400">
@@ -649,52 +659,40 @@ function LoginForm({ onLoggedIn, onRegister }: { onLoggedIn: (p: InspectorProfil
   );
 }
 
-// --- Company registration ----------------------------------------------------
+// --- First sign-in: verify email + mobile ---------------------------------------
 
-const EMIRATES = ["Dubai", "Abu Dhabi", "Sharjah", "Ajman", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain"];
-
-function RegisterForm({ onBack }: { onBack: () => void }) {
-  const [form, setForm] = useState({
-    companyName: "",
-    tradeLicense: "",
-    contactPerson: "",
-    phone: "",
-    email: "",
-    password: "",
-    services: "",
-    bankName: "",
-    bankIban: "",
-  });
-  const [areas, setAreas] = useState<string[]>([]);
-  const [error, setError] = useState("");
+function VerifyAccount({
+  inspector,
+  onVerified,
+  onLogout,
+}: {
+  inspector: InspectorProfile;
+  onVerified: (p: InspectorProfile) => void;
+  onLogout: () => void;
+}) {
+  const [email, setEmail] = useState(inspector.email ?? "");
+  const [phone, setPhone] = useState(inspector.phone ?? "");
+  const [proofs, setProofs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
 
-  function set(k: keyof typeof form, v: string) {
-    setForm((f) => ({ ...f, [k]: v }));
-  }
+  const e = normaliseEmail(email);
+  const m = normaliseUaeMobile(phone);
+  const ready = !!(e && m && proofs[verificationKey("email", e)] && proofs[verificationKey("sms", m)]);
 
-  function toggleArea(a: string) {
-    setAreas((cur) => (cur.includes(a) ? cur.filter((x) => x !== a) : [...cur, a]));
-  }
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    if (areas.length === 0) {
-      setError("Select at least one service area.");
-      return;
-    }
+  async function finish() {
+    if (!ready) return;
     setBusy(true);
+    setError("");
     try {
-      const res = await fetch("/api/inspector/register", {
+      const res = await fetch("/api/inspector/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, areas }),
+        body: JSON.stringify({ email: e, phone: m, proofs: Object.values(proofs) }),
       });
-      const data = await res.json();
-      if (res.ok && data.ok) setDone(true);
-      else setError(data.error || "Registration failed. Please try again.");
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) onVerified(data.inspector);
+      else setError(data.error || "Could not complete verification.");
     } catch {
       setError("Network error — please try again.");
     } finally {
@@ -702,106 +700,33 @@ function RegisterForm({ onBack }: { onBack: () => void }) {
     }
   }
 
-  if (done) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
-        <div className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-4xl">✅</p>
-          <h2 className="mt-3 text-lg font-bold text-neutral-900">Application submitted</h2>
-          <p className="mt-2 text-sm text-neutral-600">
-            Thank you! Our team will review your company details and trade license. You&apos;ll
-            receive an email once your account is approved.
-          </p>
-          <button onClick={onBack} className="mt-6 rounded-md bg-red-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-red-700">
-            Back to sign in
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const input = "w-full rounded-md border border-neutral-300 px-3 py-2.5 text-sm outline-none focus:border-red-500";
-  const label = "mb-1.5 block text-sm font-medium text-neutral-700";
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4 py-10">
-      <form onSubmit={submit} className="w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
-        <div className="mb-6 text-center">
+      <div className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
+        <div className="mb-5 text-center">
           <div className="flex justify-center"><BrandLogo size="md" /></div>
-          <p className="mt-2 text-sm font-semibold text-neutral-700">Partner with Wheeler Dealers</p>
-          <p className="mt-1 text-xs text-neutral-500">Register your inspection company to receive jobs</p>
+          <h1 className="mt-3 text-lg font-bold text-neutral-900">Verify your email and mobile</h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Welcome, {inspector.name.split(" ")[0]}! Before you can see jobs, confirm these belong to you —
+            we&apos;ll send a 6-digit code to each. You can correct them if your company entered them wrongly.
+          </p>
         </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label className={label}>Company name *</label>
-            <input value={form.companyName} onChange={(e) => set("companyName", e.target.value)} required className={input} placeholder="Al Fahim Auto Inspection LLC" />
-          </div>
-          <div>
-            <label className={label}>Trade license number *</label>
-            <input value={form.tradeLicense} onChange={(e) => set("tradeLicense", e.target.value)} required className={input} placeholder="CN-1234567" />
-          </div>
-          <div>
-            <label className={label}>Contact person *</label>
-            <input value={form.contactPerson} onChange={(e) => set("contactPerson", e.target.value)} required className={input} placeholder="Full name" />
-          </div>
-          <div>
-            <label className={label}>Phone *</label>
-            <input value={form.phone} onChange={(e) => set("phone", e.target.value)} required className={input} placeholder="+9715xxxxxxxx" />
-          </div>
-          <div>
-            <label className={label}>Email *</label>
-            <input value={form.email} onChange={(e) => set("email", e.target.value)} type="email" required className={input} placeholder="ops@company.ae" />
-          </div>
-          <div className="sm:col-span-2">
-            <label className={label}>Password * <span className="font-normal text-neutral-400">(min 6 characters)</span></label>
-            <input value={form.password} onChange={(e) => set("password", e.target.value)} type="password" required minLength={6} className={input} placeholder="••••••••" />
-          </div>
-          <div className="sm:col-span-2">
-            <label className={label}>Service areas *</label>
-            <div className="flex flex-wrap gap-2">
-              {EMIRATES.map((a) => (
-                <button
-                  key={a}
-                  type="button"
-                  onClick={() => toggleArea(a)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    areas.includes(a)
-                      ? "border-red-600 bg-red-50 text-red-700"
-                      : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"
-                  }`}
-                >
-                  {a}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="sm:col-span-2">
-            <label className={label}>Services offered <span className="font-normal text-neutral-400">(optional)</span></label>
-            <input value={form.services} onChange={(e) => set("services", e.target.value)} className={input} placeholder="Pre-purchase inspection, diagnostics…" />
-          </div>
-          <div>
-            <label className={label}>Bank name <span className="font-normal text-neutral-400">(optional)</span></label>
-            <input value={form.bankName} onChange={(e) => set("bankName", e.target.value)} className={input} placeholder="Emirates NBD" />
-          </div>
-          <div>
-            <label className={label}>IBAN <span className="font-normal text-neutral-400">(optional)</span></label>
-            <input value={form.bankIban} onChange={(e) => set("bankIban", e.target.value)} className={input} placeholder="AE07 0331 …" />
-          </div>
+        <div className="space-y-4">
+          <VerifyField channel="email" id="insp-email" label="Email" value={email} onChange={setEmail} proofs={proofs} onProof={(k, p) => setProofs((c) => ({ ...c, [k]: p }))} required />
+          <VerifyField channel="sms" id="insp-phone" label="Mobile (UAE)" value={phone} onChange={setPhone} proofs={proofs} onProof={(k, p) => setProofs((c) => ({ ...c, [k]: p }))} required placeholder="05X XXX XXXX" />
         </div>
-
         {error && <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-
-        <button type="submit" disabled={busy} className="mt-6 w-full rounded-md bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50">
-          {busy ? "Submitting…" : "Submit application"}
+        <button
+          onClick={finish}
+          disabled={!ready || busy}
+          className="mt-6 w-full rounded-md bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+        >
+          {busy ? "Saving…" : ready ? "Continue to my jobs" : "Verify both to continue"}
         </button>
-        <p className="mt-4 text-center text-sm text-neutral-500">
-          Already registered?{" "}
-          <button type="button" onClick={onBack} className="font-semibold text-red-600 hover:underline">
-            Sign in
-          </button>
-        </p>
-      </form>
+        <button onClick={onLogout} className="mt-3 w-full text-center text-sm text-neutral-500 hover:text-neutral-800">
+          Sign out
+        </button>
+      </div>
     </div>
   );
 }

@@ -64,8 +64,8 @@ function sign(body: string): string {
   return crypto.createHmac("sha256", getSecret()).update(body).digest("base64url");
 }
 
-export function createSessionToken(dealerId: string): string {
-  const payload = JSON.stringify({ id: dealerId, exp: Date.now() + SESSION_TTL_MS });
+export function createSessionToken(dealerId: string, ttlMs: number = SESSION_TTL_MS): string {
+  const payload = JSON.stringify({ id: dealerId, exp: Date.now() + ttlMs });
   const body = Buffer.from(payload).toString("base64url");
   return `${body}.${sign(body)}`;
 }
@@ -144,15 +144,45 @@ export function isAdmin(req: NextRequest): boolean {
 
 // --- Inspector ---------------------------------------------------------------
 
+/**
+ * Account ids are cuids and never contain ":"; prefixed subjects ("docs:…",
+ * "pending:…", "verified:…") belong to purpose-limited tokens signed with the
+ * same key, so they must never be accepted as a session id.
+ */
+function plainId(id: string | null): string | null {
+  return id && !id.includes(":") ? id : null;
+}
+
 /** Signs an inspector session token (reuses the generic signed-id token). */
 export function createInspectorToken(inspectorId: string): string {
   return createSessionToken(inspectorId);
 }
 
-/** Returns the authenticated inspector id from the request cookie, or null. */
+/**
+ * Restricted session for an inspector who hasn't verified their email and
+ * mobile yet: only /api/inspector/me and /api/inspector/verify accept it, so
+ * every job API stays locked without an extra database lookup.
+ */
+export function createPendingInspectorToken(inspectorId: string): string {
+  return createSessionToken(`pending:${inspectorId}`);
+}
+
+/** Returns the authenticated (verified) inspector id from the request cookie, or null. */
 export function getInspectorId(req: NextRequest): string | null {
   const token = req.cookies.get(INSPECTOR_COOKIE)?.value;
-  return verifySessionToken(token);
+  return plainId(verifySessionToken(token));
+}
+
+/** Any inspector session, including the restricted pre-verification one. */
+export function getInspectorSession(req: NextRequest): { id: string; pending: boolean } | null {
+  const id = verifySessionToken(req.cookies.get(INSPECTOR_COOKIE)?.value);
+  if (!id) return null;
+  if (id.startsWith("pending:")) {
+    const inner = plainId(id.slice("pending:".length));
+    return inner ? { id: inner, pending: true } : null;
+  }
+  const plain = plainId(id);
+  return plain ? { id: plain, pending: false } : null;
 }
 
 // --- Inspection company (multi-tenant "parent") -------------------------------
@@ -167,7 +197,7 @@ export function createCompanyToken(companyId: string): string {
 /** Returns the authenticated company id from the request cookie, or null. */
 export function getCompanyId(req: NextRequest): string | null {
   const token = req.cookies.get(COMPANY_COOKIE)?.value;
-  return verifySessionToken(token);
+  return plainId(verifySessionToken(token));
 }
 
 /** Short-purpose token letting a just-registered (still pending) company attach documents. */
@@ -192,5 +222,27 @@ export function createCustomerToken(customerId: string): string {
 /** Returns the authenticated customer id from the request cookie, or null. */
 export function getCustomerId(req: NextRequest): string | null {
   const token = req.cookies.get(CUSTOMER_COOKIE)?.value;
-  return verifySessionToken(token);
+  return plainId(verifySessionToken(token));
+}
+
+// --- Contact verification proofs ----------------------------------------------
+
+/** How long a verified email / mobile stays usable to complete a form. */
+const PROOF_TTL_MS = 2 * 60 * 60 * 1000;
+
+/** Signed proof that the holder entered the right code for `channel:target`. */
+export function createVerificationProof(channel: string, target: string): string {
+  return createSessionToken(`verified:${channel}:${target}`, PROOF_TTL_MS);
+}
+
+/** Returns the set of "channel:target" keys proven by the given tokens (invalid ones are ignored). */
+export function readVerificationProofs(tokens: unknown): Set<string> {
+  const keys = new Set<string>();
+  if (!Array.isArray(tokens)) return keys;
+  for (const t of tokens.slice(0, 12)) {
+    if (typeof t !== "string") continue;
+    const id = verifySessionToken(t);
+    if (id && id.startsWith("verified:")) keys.add(id.slice("verified:".length));
+  }
+  return keys;
 }

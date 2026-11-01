@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCompanyId, hashPassword } from "@/lib/auth";
+import { normaliseEmail, normaliseUaeMobile } from "@/lib/contactValidation";
+import { sendInspectorAddedEmail } from "@/lib/companyCompliance";
 
 export const runtime = "nodejs";
 
@@ -31,6 +33,8 @@ export async function GET(req: NextRequest) {
       email: true,
       phone: true,
       active: true,
+      emailVerifiedAt: true,
+      phoneVerifiedAt: true,
       createdAt: true,
       _count: { select: { jobs: true } },
     },
@@ -43,6 +47,7 @@ export async function GET(req: NextRequest) {
       email: i.email,
       phone: i.phone,
       active: i.active,
+      verified: !!(i.emailVerifiedAt && i.phoneVerifiedAt),
       jobCount: i._count.jobs,
       createdAt: i.createdAt.toISOString(),
     })),
@@ -63,13 +68,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const name = (body.name ?? "").trim();
-  const email = (body.email ?? "").trim().toLowerCase();
-  const phone = (body.phone ?? "").trim();
+  const name = (body.name ?? "").trim().slice(0, 120);
+  const email = normaliseEmail(body.email);
+  const phone = normaliseUaeMobile(body.phone);
   const password = body.password ?? "";
 
   if (!name || !email) {
-    return NextResponse.json({ error: "Name and email are required." }, { status: 400 });
+    return NextResponse.json({ error: "Name and a valid email are required." }, { status: 400 });
+  }
+  if (!phone) {
+    return NextResponse.json(
+      { error: "A UAE mobile number is required (e.g. 05X XXX XXXX) — the inspector verifies it at first sign-in." },
+      { status: 400 },
+    );
   }
   if (password.length < 6) {
     return NextResponse.json(
@@ -90,13 +101,16 @@ export async function POST(req: NextRequest) {
     data: {
       name,
       email,
-      phone: phone || null,
+      phone,
       passwordHash: hashPassword(password),
       companyId: company.id,
       approvalStatus: "approved", // approval lives at the company level
+      // emailVerifiedAt / phoneVerifiedAt stay empty: the inspector verifies at first sign-in.
     },
     select: { id: true, name: true, email: true, phone: true, active: true },
   });
 
-  return NextResponse.json({ ok: true, inspector });
+  await sendInspectorAddedEmail({ name: inspector.name, email: inspector.email, companyName: company.name });
+
+  return NextResponse.json({ ok: true, inspector: { ...inspector, verified: false } });
 }

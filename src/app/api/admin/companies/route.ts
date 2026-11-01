@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/auth";
+import { missingDocs, payoutGaps } from "@/lib/companyCompliance";
 
 export const runtime = "nodejs";
 
@@ -59,6 +60,12 @@ export async function GET(req: NextRequest) {
       bankIban: c.bankIban,
       bankName: c.bankName,
       bankBranch: c.bankBranch,
+      emailVerifiedAt: c.emailVerifiedAt?.toISOString() ?? null,
+      phoneVerifiedAt: c.phoneVerifiedAt?.toISOString() ?? null,
+      pocEmailVerifiedAt: c.pocEmailVerifiedAt?.toISOString() ?? null,
+      pocMobileVerifiedAt: c.pocMobileVerifiedAt?.toISOString() ?? null,
+      missingDocs: missingDocs(c.documents.map((d) => d.kind)),
+      payoutGaps: payoutGaps(c, c.documents.map((d) => d.kind)),
       approvalStatus: c.approvalStatus,
       active: c.active,
       inspectorCount: c._count.inspectors,

@@ -216,6 +216,14 @@ model InspectionCompany {
   pocMobile String?
   pocEmail  String?
 
+  // Ownership checks (6-digit code by email / SMS). Registration cannot
+  // complete without all four; accounts that pre-date the check were
+  // backfilled as verified.
+  emailVerifiedAt     DateTime?
+  phoneVerifiedAt     DateTime?
+  pocEmailVerifiedAt  DateTime?
+  pocMobileVerifiedAt DateTime?
+
   // Business profile
   tradeLicense String?
   areas        String? // comma-separated emirates/cities covered
@@ -244,7 +252,7 @@ model CompanyDocument {
   id        String   @id @default(cuid())
   companyId String
   company   InspectionCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  kind      String   // trade_license | vat_certificate | other
+  kind      String   // trade_license | vat_certificate | iban_letter | other
   label     String?  // free-text title for kind=other
   fileName  String
   mimeType  String
@@ -263,6 +271,10 @@ model Inspector {
   phone        String?
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
+
+  // Verified by the inspector at first sign-in; job APIs stay locked until both are set.
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
 
   // Parent company (multi-tenant). Legacy standalone accounts have null.
   companyId String?
@@ -288,9 +300,10 @@ model Inspector {
 /// A customer account. Login is required before booking (mobile OTP).
 model Customer {
   id        String   @id @default(cuid())
-  mobile    String   @unique
+  mobile    String   @unique // verified by the OTP login itself
   name      String?
-  email     String?
+  email     String?  // only ever set through email verification
+  emailVerifiedAt DateTime?
   createdAt DateTime @default(now())
   lastLogin DateTime?
 
@@ -313,6 +326,24 @@ model OtpCode {
 
 /// Simple key-value store for admin-configurable platform settings
 /// (e.g. inspection customer price, partner payout amount).
+/// One-time codes proving ownership of an email address or UAE mobile
+/// (company, Point of Contact, inspector, customer email). SMS codes sent via
+/// Message Central keep "mc:<verificationId>" in codeHash.
+model VerificationCode {
+  id        String   @id @default(cuid())
+  channel   String   // sms | email
+  target    String   // +9715XXXXXXXX or lower-cased email
+  codeHash  String   // "salt:scrypt" or "mc:<verificationId>"
+  ip        String?
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([channel, target, createdAt])
+  @@index([ip, createdAt])
+  @@index([expiresAt])
+}
+
 model PlatformSetting {
   key       String   @id
   value     String

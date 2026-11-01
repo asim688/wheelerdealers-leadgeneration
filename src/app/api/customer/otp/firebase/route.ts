@@ -51,14 +51,13 @@ export async function POST(req: NextRequest) {
   }
 
   const name = (body.name ?? "").trim();
-  const email = (body.email ?? "").trim().toLowerCase();
   const customer = await prisma.customer.upsert({
     where: { mobile: user.phone },
-    create: { mobile: user.phone, name: name || null, email: email || null, lastLogin: new Date() },
+    // Email is only ever stored through /api/customer/email (verified by code).
+    create: { mobile: user.phone, name: name || null, lastLogin: new Date() },
     update: {
       lastLogin: new Date(),
       ...(name ? { name } : {}),
-      ...(email ? { email } : {}),
     },
   });
 

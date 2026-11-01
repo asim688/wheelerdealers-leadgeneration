@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCompanyId, hashPassword } from "@/lib/auth";
+import { normaliseUaeMobile } from "@/lib/contactValidation";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export async function PATCH(
 
   const inspector = await prisma.inspector.findFirst({
     where: { id, companyId },
-    select: { id: true },
+    select: { id: true, phone: true },
   });
   if (!inspector) {
     return NextResponse.json({ error: "Inspector not found." }, { status: 404 });
@@ -38,7 +39,17 @@ export async function PATCH(
   const data: Record<string, unknown> = {};
   if (typeof body.active === "boolean") data.active = body.active;
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
-  if (typeof body.phone === "string") data.phone = body.phone.trim() || null;
+  if (typeof body.phone === "string") {
+    const phone = normaliseUaeMobile(body.phone);
+    if (!phone) {
+      return NextResponse.json({ error: "Enter a valid UAE mobile number (e.g. 05X XXX XXXX)." }, { status: 400 });
+    }
+    // A new number must be verified by the inspector again at next sign-in.
+    if (phone !== inspector.phone) {
+      data.phone = phone;
+      data.phoneVerifiedAt = null;
+    }
+  }
   if (typeof body.password === "string" && body.password.length > 0) {
     if (body.password.length < 6) {
       return NextResponse.json(

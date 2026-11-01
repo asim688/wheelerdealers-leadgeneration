@@ -131,11 +131,16 @@ export async function generateJobCode(): Promise<string> {
  * ---------------------------------------------------------------------------
  */
 
+/** Reserved test domains: never really emailed from dev (protects the sending domain's reputation). */
+export function isTestEmailAddress(to: string): boolean {
+  return /@(?:[^@]+\.)?(?:example\.(?:com|org|net)|[^@]+\.test)$/i.test(to.trim());
+}
+
 /** Sends an email via Resend if configured, else logs. Returns true if sent. */
-export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+export async function sendEmail(to: string, subject: string, html: string, text?: string): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM || "The Wheeler Dealers <onboarding@resend.dev>";
-  if (!key) {
+  if (!key || (process.env.NODE_ENV !== "production" && isTestEmailAddress(to))) {
     console.info(`[notify:email:stub] → ${to} | ${subject}`);
     return false;
   }
@@ -143,9 +148,10 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to, subject, html }),
+      body: JSON.stringify({ from, to, subject, html, ...(text ? { text } : {}) }),
+      signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) console.error("Resend email failed:", res.status);
+    if (!res.ok) console.error("Resend email failed:", res.status, (await res.text().catch(() => "")).slice(0, 200));
     return res.ok;
   } catch (err) {
     console.error("Resend email error:", err);

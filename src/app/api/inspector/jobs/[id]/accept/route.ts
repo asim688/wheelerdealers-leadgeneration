@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getInspectorId } from "@/lib/auth";
 import { getInspectionPricing, sendEmail } from "@/lib/inspection";
+import { companyPayoutGaps, PAYOUT_BLOCK_MESSAGE } from "@/lib/companyCompliance";
 
 export const runtime = "nodejs";
 
@@ -27,13 +28,33 @@ export async function POST(
 
   const company = await prisma.inspector.findUnique({
     where: { id: inspectorId },
-    select: { id: true, name: true, active: true, approvalStatus: true },
+    select: {
+      id: true,
+      name: true,
+      active: true,
+      approvalStatus: true,
+      companyId: true,
+      company: { select: { active: true, approvalStatus: true } },
+    },
   });
   if (!company || !company.active || company.approvalStatus !== "approved") {
     return NextResponse.json(
       { error: "Your company is not approved to accept jobs." },
       { status: 403 },
     );
+  }
+  // Inspectors of a multi-tenant company accept on its behalf: same rules.
+  if (company.companyId) {
+    if (!company.company?.active || company.company.approvalStatus !== "approved") {
+      return NextResponse.json({ error: "Your company is not approved to accept jobs." }, { status: 403 });
+    }
+    const gaps = await companyPayoutGaps(company.companyId);
+    if (!gaps || gaps.length > 0) {
+      return NextResponse.json(
+        { error: "Your company must add its bank details and Bank IBAN Letter before accepting new jobs.", payoutIncomplete: true },
+        { status: 403 },
+      );
+    }
   }
 
   const { partnerPayout } = await getInspectionPricing();
