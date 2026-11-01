@@ -21,3 +21,27 @@ export async function getFirebaseAuth() {
   const { getAuth } = await import("firebase/auth");
   return getAuth(getApps().length ? getApp() : initializeApp(config));
 }
+
+/** Friendly message for a Firebase Phone Auth error. */
+export function firebaseErrorMessage(err: unknown): string {
+  const code = (err as { code?: string })?.code ?? "";
+  switch (code) {
+    case "auth/invalid-phone-number":
+      return "That mobile number doesn't look right. Please check it and try again.";
+    case "auth/too-many-requests":
+    case "auth/quota-exceeded":
+      return "Too many attempts. Please wait a few minutes and try again.";
+    case "auth/invalid-verification-code":
+      return "Incorrect code. Please try again.";
+    case "auth/code-expired":
+      return "That code has expired. Please request a new one.";
+    case "auth/captcha-check-failed":
+      return "Security check failed. Please refresh the page and try again.";
+    case "auth/operation-not-allowed":
+      return "SMS verification isn't available for this number right now.";
+    case "auth/network-request-failed":
+      return "Network error — please check your connection and try again.";
+    default:
+      return "We couldn't complete the verification. Please try again.";
+  }
+}

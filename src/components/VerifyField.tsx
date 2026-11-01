@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ConfirmationResult, RecaptchaVerifier } from "firebase/auth";
 import { normaliseTarget, verificationKey, type VerifyChannel } from "@/lib/contactValidation";
+import { FIREBASE_PHONE_ENABLED, firebaseErrorMessage, getFirebaseAuth } from "@/lib/firebaseClient";
 
 /**
  * An email or UAE-mobile input with built-in ownership verification:
@@ -9,6 +11,11 @@ import { normaliseTarget, verificationKey, type VerifyChannel } from "@/lib/cont
  * parent in a map keyed by `channel:normalisedValue`, so two fields holding
  * the same value (e.g. company email = PoC email) share one verification, and
  * editing a verified value automatically un-verifies it.
+ *
+ * Mobile codes use Firebase Phone Auth (same as customer booking) whenever the
+ * NEXT_PUBLIC_FIREBASE_* config is present: the SMS is sent and checked in the
+ * browser and /api/verify/firebase turns the Firebase ID token into a proof.
+ * Without Firebase config (local dev) the server flow shows a dev code.
  */
 export default function VerifyField({
   channel,
@@ -40,11 +47,26 @@ export default function VerifyField({
   const [info, setInfo] = useState("");
   const [devCode, setDevCode] = useState("");
   const [cooldown, setCooldown] = useState(0);
+  const recaptchaHostRef = useRef<HTMLDivElement>(null);
+  const verifierRef = useRef<RecaptchaVerifier | null>(null);
+  const confirmationRef = useRef<ConfirmationResult | null>(null);
+
+  const useFirebase = channel === "sms" && FIREBASE_PHONE_ENABLED;
 
   const normalised = normaliseTarget(channel, value);
   const key = normalised ? verificationKey(channel, normalised) : null;
   const verified = !!(key && proofs[key]);
   const awaitingCode = !!normalised && sentTo === normalised && !verified;
+
+  function resetVerifier() {
+    try {
+      verifierRef.current?.clear();
+    } catch {
+      /* already cleared */
+    }
+    verifierRef.current = null;
+  }
+  useEffect(() => resetVerifier, []);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -52,12 +74,76 @@ export default function VerifyField({
     return () => clearTimeout(t);
   }, [cooldown]);
 
+  async function sendWithFirebase(target: string) {
+    try {
+      const { RecaptchaVerifier, signInWithPhoneNumber } = await import("firebase/auth");
+      const auth = await getFirebaseAuth();
+      resetVerifier();
+      verifierRef.current = new RecaptchaVerifier(auth, recaptchaHostRef.current!, { size: "invisible" });
+      confirmationRef.current = await signInWithPhoneNumber(auth, target, verifierRef.current);
+      setSentTo(target);
+      setCode("");
+      setCooldown(30);
+      setInfo(`We sent a 6-digit code by SMS to ${target}.`);
+    } catch (err) {
+      resetVerifier();
+      confirmationRef.current = null;
+      setError(firebaseErrorMessage(err));
+    }
+  }
+
+  async function checkWithFirebase(target: string) {
+    if (!confirmationRef.current) {
+      setError("Please request a new code.");
+      setSentTo(null);
+      return;
+    }
+    try {
+      const result = await confirmationRef.current.confirm(code);
+      const idToken = await result.user.getIdToken();
+      const res = await fetch("/api/verify/firebase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json().catch(() => ({}));
+      // Only our proof matters; never keep a Firebase browser session around.
+      try {
+        const { signOut } = await import("firebase/auth");
+        await signOut(await getFirebaseAuth());
+      } catch {
+        /* best effort */
+      }
+      if (!res.ok || !data.ok || !data.proof) {
+        setError(data.error || "Verification failed — please try again.");
+        return;
+      }
+      if (data.target !== target) {
+        setError("The verified number doesn't match this field. Please try again.");
+        return;
+      }
+      onProof(verificationKey("sms", target), data.proof);
+      confirmationRef.current = null;
+      resetVerifier();
+      setSentTo(null);
+      setCode("");
+      setInfo("");
+    } catch (err) {
+      setError(firebaseErrorMessage(err));
+    }
+  }
+
   async function send() {
     if (!normalised || busy) return;
     setBusy("send");
     setError("");
     setInfo("");
     setDevCode("");
+    if (useFirebase) {
+      await sendWithFirebase(normalised);
+      setBusy(null);
+      return;
+    }
     try {
       const res = await fetch("/api/verify/send", {
         method: "POST",
@@ -91,6 +177,11 @@ export default function VerifyField({
     }
     setBusy("check");
     setError("");
+    if (useFirebase) {
+      await checkWithFirebase(normalised);
+      setBusy(null);
+      return;
+    }
     try {
       const res = await fetch("/api/verify/check", {
         method: "POST",
@@ -119,6 +210,7 @@ export default function VerifyField({
 
   return (
     <div>
+      {useFirebase && <div ref={recaptchaHostRef} />}
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <label htmlFor={id} className="block text-sm font-medium text-neutral-700">{label}</label>
         {normalised && (
