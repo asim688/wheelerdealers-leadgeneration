@@ -7,8 +7,8 @@ import type {
 } from "@/lib/types";
 
 /**
- * Admin "Jobs Management" — list, filter, assign inspectors and track the
- * status of vehicle-inspection jobs, plus a collapsible inspector roster.
+ * Admin "Jobs Management" — list and filter vehicle-inspection jobs by
+ * company, track their status, and manage inspection companies.
  */
 
 const STATUS_TABS: Array<{ key: string; label: string }> = [
@@ -38,7 +38,7 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
   const [data, setData] = useState<AdminInspectionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
-  const [inspectorId, setInspectorId] = useState("");
+  const [companyId, setCompanyId] = useState("");
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [page, setPage] = useState(1);
@@ -56,7 +56,7 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
     try {
       const p = new URLSearchParams({ page: String(page), pageSize: "20" });
       if (status) p.set("status", status);
-      if (inspectorId) p.set("inspectorId", inspectorId);
+      if (companyId) p.set("companyId", companyId);
       if (debouncedQ) p.set("q", debouncedQ);
       const res = await fetch(`/api/admin/inspections?${p.toString()}`);
       if (res.status === 401) return onUnauthorized();
@@ -64,7 +64,7 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
     } finally {
       setLoading(false);
     }
-  }, [page, status, inspectorId, debouncedQ, onUnauthorized]);
+  }, [page, status, companyId, debouncedQ, onUnauthorized]);
 
   useEffect(() => {
     void fetchJobs();
@@ -73,7 +73,7 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
   // Reset to page 1 when filters change.
   useEffect(() => {
     setPage(1);
-  }, [status, inspectorId, debouncedQ]);
+  }, [status, companyId, debouncedQ]);
 
   async function patchJob(id: string, patch: Record<string, unknown>) {
     setSavingId(id);
@@ -103,14 +103,14 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
 
   function exportCsv() {
     if (!data) return;
-    const header = ["Job ID", "Status", "Customer", "Mobile", "Vehicle", "Inspector", "Scheduled", "Location"];
+    const header = ["Job ID", "Status", "Customer", "Mobile", "Vehicle", "Company", "Scheduled", "Location"];
     const rows = data.jobs.map((j) => [
       j.jobCode,
       j.status,
       j.customerName,
       j.customerMobile,
       j.vehicle,
-      j.inspector?.name ?? "Unassigned",
+      j.company?.name ?? "Unassigned",
       j.scheduledAt ? `${new Date(j.scheduledAt).toLocaleDateString()} ${j.scheduledSlot ?? ""}` : "",
       j.location,
     ]);
@@ -125,7 +125,7 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
     URL.revokeObjectURL(url);
   }
 
-  const inspectors = data?.inspectors ?? [];
+  const companies = data?.companies ?? [];
   const counts = data?.statusCounts ?? {};
   const revenue = data?.revenue ?? 0;
   const payouts = data?.payouts ?? 0;
@@ -207,11 +207,11 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
           placeholder="Search job ID, customer, vehicle…"
           className="min-w-[220px] flex-1 rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500"
         />
-        <select value={inspectorId} onChange={(e) => setInspectorId(e.target.value)} className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500">
+        <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500">
           <option value="">All companies</option>
           <option value="unassigned">Unassigned</option>
-          {inspectors.map((i) => (
-            <option key={i.id} value={i.id}>{i.name}</option>
+          {companies.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
       </div>
@@ -241,9 +241,7 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
                 <JobRow
                   key={j.id}
                   job={j}
-                  inspectors={inspectors}
                   saving={savingId === j.id}
-                  onAssign={(inspId) => patchJob(j.id, { assignedInspectorId: inspId })}
                   onStatus={(s) => patchJob(j.id, { status: s })}
                   onRenew={() => renewJob(j.id, j.jobCode)}
                 />
@@ -269,16 +267,12 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
 
 function JobRow({
   job,
-  inspectors,
   saving,
-  onAssign,
   onStatus,
   onRenew,
 }: {
   job: AdminInspectionJob;
-  inspectors: Array<{ id: string; name: string }>;
   saving: boolean;
-  onAssign: (inspectorId: string) => void;
   onStatus: (status: string) => void;
   onRenew: () => void;
 }) {
@@ -301,17 +295,11 @@ function JobRow({
         <p className="text-xs text-neutral-400">{job.location}</p>
       </td>
       <td className="px-4 py-3">
-        <select
-          value={job.inspector?.id ?? ""}
-          disabled={saving}
-          onChange={(e) => onAssign(e.target.value)}
-          className="max-w-[150px] rounded-md border border-neutral-300 px-2 py-1.5 text-xs outline-none focus:border-red-500"
-        >
-          <option value="">Unassigned</option>
-          {inspectors.map((i) => (
-            <option key={i.id} value={i.id}>{i.name}</option>
-          ))}
-        </select>
+        {job.company ? (
+          <p className="font-medium text-neutral-800">{job.company.name}</p>
+        ) : (
+          <span className="text-xs text-neutral-400">Unassigned</span>
+        )}
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-neutral-600">
         {job.scheduledAt ? (

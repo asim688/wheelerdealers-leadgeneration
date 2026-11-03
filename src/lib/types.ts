@@ -635,6 +635,8 @@ export interface AdminInspectionJob {
   vehicle: string;
   location: string;
   inspector: { id: string; name: string } | null;
+  /** The inspection company this job belongs to (accepted it / its inspector's company). */
+  company: { id: string; name: string } | null;
   scheduledAt: string | null;
   scheduledSlot: string | null;
   fee: number | null;
@@ -662,7 +664,7 @@ export interface AdminInspectionsResponse {
   payouts?: number;
   commission?: number;
   currency?: string;
-  inspectors: Array<{ id: string; name: string }>;
+  companies: Array<{ id: string; name: string }>;
 }
 
 /** An inspection company as seen by the admin roster. */

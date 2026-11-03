@@ -21,7 +21,9 @@ const STATUSES = [
  * GET /api/admin/inspections
  * ---------------------------------------------------------------------------
  * Paginated, filterable list of inspection jobs for the admin Jobs Management
- * screen, plus per-status counts and the inspector roster for assignment.
+ * screen, plus per-status counts and the company list for the filter.
+ * Each job carries the company it belongs to: the company that accepted it,
+ * or — for jobs assigned to an inspector directly — that inspector's company.
  */
 export async function GET(req: NextRequest) {
   if (!isAdmin(req)) {
@@ -30,7 +32,7 @@ export async function GET(req: NextRequest) {
 
   const sp = req.nextUrl.searchParams;
   const status = sp.get("status") || "";
-  const inspectorId = sp.get("inspectorId") || "";
+  const companyId = sp.get("companyId") || "";
   const q = (sp.get("q") || "").trim();
   const dateFrom = sp.get("dateFrom") || "";
   const dateTo = sp.get("dateTo") || "";
@@ -38,9 +40,14 @@ export async function GET(req: NextRequest) {
   const pageSize = Math.min(100, Math.max(1, Number(sp.get("pageSize")) || 20));
 
   const where: Prisma.InspectionJobWhereInput = {};
+  const and: Prisma.InspectionJobWhereInput[] = [];
   if (STATUSES.includes(status)) where.status = status;
-  if (inspectorId === "unassigned") where.assignedInspectorId = null;
-  else if (inspectorId) where.assignedInspectorId = inspectorId;
+  if (companyId === "unassigned") {
+    and.push({ acceptedByCompanyId: null, OR: [{ assignedInspectorId: null }, { inspector: { companyId: null } }] });
+  } else if (companyId) {
+    and.push({ OR: [{ acceptedByCompanyId: companyId }, { acceptedByCompanyId: null, inspector: { companyId } }] });
+  }
+  if (and.length) where.AND = and;
   if (q) {
     where.OR = [
       { jobCode: { contains: q, mode: "insensitive" } },
@@ -56,18 +63,20 @@ export async function GET(req: NextRequest) {
     if (dateTo) (where.scheduledAt as Prisma.DateTimeFilter).lte = new Date(`${dateTo}T23:59:59`);
   }
 
-  const [total, rows, grouped, inspectors] = await Promise.all([
+  const [total, rows, grouped, companies] = await Promise.all([
     prisma.inspectionJob.count({ where }),
     prisma.inspectionJob.findMany({
       where,
       orderBy: [{ scheduledAt: "asc" }, { createdAt: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
-      include: { inspector: { select: { id: true, name: true } } },
+      include: {
+        inspector: { select: { id: true, name: true, company: { select: { id: true, name: true } } } },
+        acceptedByCompany: { select: { id: true, name: true } },
+      },
     }),
     prisma.inspectionJob.groupBy({ by: ["status"], _count: { _all: true } }),
-    prisma.inspector.findMany({
-      where: { active: true },
+    prisma.inspectionCompany.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
@@ -105,6 +114,7 @@ export async function GET(req: NextRequest) {
     vehicle: [j.year, j.make, j.model].filter(Boolean).join(" ") || "Vehicle",
     location: [j.city || j.address, j.emirate].filter(Boolean).join(", "),
     inspector: j.inspector ? { id: j.inspector.id, name: j.inspector.name } : null,
+    company: j.acceptedByCompany ?? j.inspector?.company ?? null,
     scheduledAt: j.scheduledAt ? j.scheduledAt.toISOString() : null,
     scheduledSlot: j.scheduledSlot,
     fee: j.fee,
@@ -131,6 +141,6 @@ export async function GET(req: NextRequest) {
     payouts,
     commission: revenue - payouts,
     currency: process.env.NEXT_PUBLIC_CURRENCY || "AED",
-    inspectors,
+    companies,
   });
 }
