@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/auth";
-import { getBaseUrl, getInspectionPricing, getJobOpenHours, notifyCompaniesNewJob, sendReportNotification } from "@/lib/inspection";
+import { getInspectionPricing, getJobOpenHours, notifyCompaniesNewJob } from "@/lib/inspection";
+import { approveReport } from "@/lib/review";
 import type { Prisma } from "@prisma/client";
 
 export const runtime = "nodejs";
@@ -22,8 +23,9 @@ const STATUSES = [
  * PATCH /api/admin/inspections/[id]
  * ---------------------------------------------------------------------------
  * Assign / reassign an inspection company and/or manually change a job's
- * status (marketplace override). Marking a job "completed" finalises it: the
- * standardized report link is delivered to the customer at that moment.
+ * status (marketplace override). Marking a submitted job "completed" is the
+ * super admin verifying the report: it is stamped "Verified by The Wheeler
+ * Dealers" and the report link is delivered to the customer.
  * `renew: true` re-opens an expired job with a fresh acceptance window.
  * Body: { assignedInspectorId?: string | null, status?: string, renew?: boolean }.
  */
@@ -107,13 +109,22 @@ export async function PATCH(
     }
   }
 
-  // Explicit status change (manual override / cancel / finalize).
+  // Completing = verifying the submitted report (stamp + send to customer).
+  if (body.status === "completed") {
+    if (body.renew || body.assignedInspectorId !== undefined) {
+      return NextResponse.json({ error: "Verify the report on its own request." }, { status: 400 });
+    }
+    const result = await approveReport({ type: "admin", id: "admin", name: "Super Admin" }, id);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+    return NextResponse.json({ ok: true, job: { id, status: "completed" } });
+  }
+
+  // Explicit status change (manual override / cancel / reopen).
   if (body.status !== undefined) {
     if (!STATUSES.includes(body.status)) {
       return NextResponse.json({ error: "Invalid status." }, { status: 400 });
     }
     data.status = body.status;
-    if (body.status === "completed") data.completedAt = new Date();
   }
 
   const updated = await prisma.inspectionJob.update({
@@ -121,37 +132,12 @@ export async function PATCH(
     data,
     include: {
       inspector: { select: { id: true, name: true } },
-      report: { select: { sentAt: true } },
     },
   });
 
   // A renewed job is live again — alert the companies that can still take it.
   if (body.renew) {
     await notifyCompaniesNewJob(updated);
-  }
-
-  // Finalisation: the first transition to "completed" delivers the branded
-  // report link to the customer (email + SMS + WhatsApp, provider-ready).
-  if (
-    body.status === "completed" &&
-    job.status !== "completed" &&
-    updated.reportToken &&
-    !updated.report?.sentAt
-  ) {
-    const reportUrl = `${getBaseUrl()}/inspection/report/${updated.reportToken}`;
-    await Promise.allSettled([
-      sendReportNotification({
-        jobCode: updated.jobCode,
-        customerName: updated.customerName,
-        customerMobile: updated.customerMobile,
-        customerEmail: updated.customerEmail,
-        reportUrl,
-      }),
-      prisma.inspectionReport.update({
-        where: { jobId: updated.id },
-        data: { sentAt: new Date() },
-      }),
-    ]);
   }
 
   return NextResponse.json({

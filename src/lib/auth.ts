@@ -225,6 +225,38 @@ export function getCustomerId(req: NextRequest): string | null {
   return plainId(verifySessionToken(token));
 }
 
+// --- Account Manager (Wheeler Dealers staff who verify reports) ---------------
+
+export const MANAGER_COOKIE = "wd_manager";
+
+export function createManagerToken(managerId: string): string {
+  return createSessionToken(`manager:${managerId}`);
+}
+
+/** Restricted session until the manager has verified their email + mobile. */
+export function createPendingManagerToken(managerId: string): string {
+  return createSessionToken(`manager-pending:${managerId}`);
+}
+
+/** Any manager session (pending = still has to verify email + mobile). */
+export function getManagerSession(req: NextRequest): { id: string; pending: boolean } | null {
+  const id = verifySessionToken(req.cookies.get(MANAGER_COOKIE)?.value);
+  if (!id) return null;
+  for (const [prefix, pending] of [["manager:", false], ["manager-pending:", true]] as const) {
+    if (id.startsWith(prefix)) {
+      const inner = plainId(id.slice(prefix.length));
+      return inner ? { id: inner, pending } : null;
+    }
+  }
+  return null;
+}
+
+/** Verified manager id from the request cookie, or null. */
+export function getManagerId(req: NextRequest): string | null {
+  const s = getManagerSession(req);
+  return s && !s.pending ? s.id : null;
+}
+
 // --- Contact verification proofs ----------------------------------------------
 
 /** How long a verified email / mobile stays usable to complete a form. */

@@ -68,7 +68,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function LoginForm({ onAuthed }: { onAuthed: () => void }) {
+export function LoginForm({ onAuthed }: { onAuthed: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -248,6 +248,11 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
               key={t}
               active={tab === t}
               onClick={() => {
+                // Inspections has its own full super-admin page.
+                if (t === "inspections") {
+                  window.location.href = "/admin/inspections";
+                  return;
+                }
                 setTab(t);
                 setSidebarOpen(false);
               }}

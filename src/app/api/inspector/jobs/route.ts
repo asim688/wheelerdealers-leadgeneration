@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
     where,
     orderBy: [{ scheduledAt: "asc" }, { createdAt: "desc" }],
     take: 200,
+    include: { report: { select: { returnedAt: true } } },
   });
 
   const jobs = rows.map((j) => ({
@@ -75,6 +76,7 @@ export async function GET(req: NextRequest) {
     payout: j.partnerPayout,
     currency: j.currency,
     completedAt: j.completedAt ? j.completedAt.toISOString() : null,
+    returned: j.status === "in_progress" && !!j.report?.returnedAt,
   }));
 
   return NextResponse.json({

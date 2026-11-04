@@ -122,3 +122,17 @@ export async function sendInspectorAddedEmail(i: { name: string; email: string; 
   const text = `${i.companyName ?? "Your company"} has added you as an inspector on The Wheeler Dealers. Sign in at ${url} with ${i.email} and the password your company gave you, then verify your email and mobile.`;
   await sendEmail(i.email, "You've been added as an inspector — The Wheeler Dealers", html, text);
 }
+
+/** Sent to a new Account Manager (no password — the super admin shares it). */
+export async function sendManagerAddedEmail(m: { name: string; email: string }) {
+  const url = `${getBaseUrl()}/manager`;
+  const html = brandEmail({
+    heading: "You've been added as an Account Manager",
+    bodyHtml: `<p style="margin:0 0 12px">Hi ${esc(m.name)},</p>
+<p style="margin:0 0 12px">You've been added as an <b>Account Manager</b> on The Wheeler Dealers. You'll verify the inspection reports of the companies assigned to you before they are sent to customers.</p>
+<p style="margin:0 0 12px">Sign in with <b>${esc(m.email)}</b> and the password you were given. The first time, you'll verify your email and mobile number with 6-digit codes.</p>`,
+    cta: { label: "Open Account Manager portal", url },
+  });
+  await sendEmail(m.email, "You've been added as an Account Manager — The Wheeler Dealers", html,
+    `You've been added as an Account Manager on The Wheeler Dealers. Sign in at ${url} with ${m.email}.`);
+}

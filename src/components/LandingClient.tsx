@@ -5,6 +5,7 @@ import type { TabId } from "@/lib/types";
 import BrandLogo from "./BrandLogo";
 import ChatPanel from "./ChatPanel";
 import InspectionBookingChat from "./InspectionBookingChat";
+import AuthChooser from "./AuthChooser";
 
 /** The search tabs — the 4 chat intents plus the Inspection booking journey. */
 type TabKey = TabId | "inspection";
@@ -16,16 +17,18 @@ interface TabConfig {
   placeholder: string;
   seed: string;
   icon: React.ReactNode;
+  /** Shown greyed out with a "Coming soon" label and not clickable. */
+  comingSoon?: boolean;
 }
 
 const TABS: TabConfig[] = [
   {
-    id: "buy",
-    label: "Buy",
-    cta: "Find Cars",
-    placeholder: "Search make, model, year, trim, location or keyword...",
-    seed: "I'm looking to buy a car.",
-    icon: <CarIcon />,
+    id: "inspection",
+    label: "Inspection",
+    cta: "Book Inspection",
+    placeholder: "Book a professional 300+ point vehicle inspection...",
+    seed: "",
+    icon: <SearchIcon />,
   },
   {
     id: "sell",
@@ -36,20 +39,22 @@ const TABS: TabConfig[] = [
     icon: <TagIcon />,
   },
   {
+    id: "buy",
+    label: "Buy",
+    cta: "Find Cars",
+    placeholder: "Search make, model, year, trim, location or keyword...",
+    seed: "I'm looking to buy a car.",
+    icon: <CarIcon />,
+    comingSoon: true,
+  },
+  {
     id: "trade",
     label: "Trade",
     cta: "Start Trade-In",
     placeholder: "What do you want to sell, and what do you want next...",
     seed: "I want to trade in my car for another one.",
     icon: <SwapIcon />,
-  },
-  {
-    id: "inspection",
-    label: "Inspection",
-    cta: "Book Inspection",
-    placeholder: "Book a professional 300+ point vehicle inspection...",
-    seed: "",
-    icon: <SearchIcon />,
+    comingSoon: true,
   },
   {
     id: "dealer",
@@ -58,11 +63,13 @@ const TABS: TabConfig[] = [
     placeholder: "Dealer auction access — view live seller leads...",
     seed: "I'm a dealer interested in the live auction.",
     icon: <BuildingIcon />,
+    comingSoon: true,
   },
 ];
 
 export default function LandingClient() {
-  const [activeTab, setActiveTab] = useState<TabKey>("buy");
+  const [activeTab, setActiveTab] = useState<TabKey>("inspection");
+  const [auth, setAuth] = useState<"signin" | "signup" | null>(null);
   const [query, setQuery] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const [initialMessage, setInitialMessage] = useState("");
@@ -88,8 +95,24 @@ export default function LandingClient() {
     <div className="flex min-h-screen flex-col bg-white">
       {/* Slim header (logo only) */}
       <header className="sticky top-0 z-30 border-b border-neutral-100 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-2.5">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-2.5">
           <BrandLogo size="sm" />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setAuth("signin")}
+              className="rounded-md px-3 py-2 text-sm font-semibold text-neutral-700 transition-colors hover:bg-neutral-100 sm:px-4"
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuth("signup")}
+              className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 sm:px-4"
+            >
+              Sign Up
+            </button>
+          </div>
         </div>
       </header>
 
@@ -119,14 +142,28 @@ export default function LandingClient() {
                     <button
                       key={tab.id}
                       type="button"
-                      onClick={() => setActiveTab(tab.id)}
+                      disabled={tab.comingSoon}
+                      aria-disabled={tab.comingSoon}
+                      title={tab.comingSoon ? `${tab.label} — coming soon` : undefined}
+                      onClick={() => !tab.comingSoon && setActiveTab(tab.id)}
                       className={[
                         "relative flex min-w-fit flex-1 items-center justify-center gap-2 whitespace-nowrap px-4 py-3.5 text-sm font-semibold transition-colors sm:px-6",
-                        isActive ? "text-red-600" : "text-neutral-700 hover:text-neutral-900",
+                        tab.comingSoon
+                          ? "cursor-not-allowed text-neutral-300"
+                          : isActive
+                            ? "text-red-600"
+                            : "text-neutral-700 hover:text-neutral-900",
                       ].join(" ")}
                     >
                       {tab.icon}
-                      {tab.label}
+                      {tab.comingSoon ? (
+                        <span className="flex flex-col items-start leading-tight">
+                          {tab.label}
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-neutral-400">Coming soon</span>
+                        </span>
+                      ) : (
+                        tab.label
+                      )}
                       {isActive && (
                         <span className="absolute inset-x-4 bottom-0 h-0.5 rounded-t bg-red-600 sm:inset-x-6" />
                       )}
@@ -231,6 +268,8 @@ export default function LandingClient() {
           <p>© {new Date().getFullYear()} The Wheeler Dealers. All rights reserved.</p>
         </div>
       </footer>
+
+      {auth && <AuthChooser mode={auth} onClose={() => setAuth(null)} onSwitch={(m) => setAuth(m)} />}
 
       {chatOpen && activeTab === "inspection" && (
         <InspectionBookingChat

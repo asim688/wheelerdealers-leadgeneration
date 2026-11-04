@@ -349,9 +349,15 @@ function Dashboard({
                       </p>
                       <p className="mt-0.5 font-mono text-[11px] text-neutral-400">{j.jobCode}</p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[j.status] || "bg-neutral-100 text-neutral-600"}`}>
-                      {statusLabel(j.status)}
-                    </span>
+                    {j.returned ? (
+                      <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                        Returned for correction
+                      </span>
+                    ) : (
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[j.status] || "bg-neutral-100 text-neutral-600"}`}>
+                        {statusLabel(j.status)}
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}

@@ -263,10 +263,10 @@ export async function sendReportNotification(job: {
   customerEmail: string;
   reportUrl: string;
 }): Promise<void> {
-  const line = `Hi ${job.customerName}, your vehicle inspection report for ${job.jobCode} is ready. View it: ${job.reportUrl}`;
+  const line = `Hi ${job.customerName}, your vehicle inspection report for ${job.jobCode} has been verified by The Wheeler Dealers and is ready. View it: ${job.reportUrl}`;
   const html = `<p>Hi ${escapeHtml(job.customerName)},</p>
-<p>Your vehicle inspection report is ready. It records the inspector's observations by vehicle system so you can make your own informed decision.</p>
-<p><a href="${job.reportUrl}">View your full report</a></p>
+<p>Your vehicle inspection report has been verified by The Wheeler Dealers and is ready. It records the inspector's observations by vehicle system so you can make your own informed decision.</p>
+<p><a href="${job.reportUrl}">View your full report</a> — you can also find it any time under My Bookings &amp; Reports: ${getBaseUrl()}/account</p>
 <p>— The Wheeler Dealers</p>`;
 
   await Promise.allSettled([

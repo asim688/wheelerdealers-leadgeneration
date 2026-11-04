@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const status = sp.get("status") || "";
   const companyId = sp.get("companyId") || "";
+  const managerId = sp.get("managerId") || "";
   const q = (sp.get("q") || "").trim();
   const dateFrom = sp.get("dateFrom") || "";
   const dateTo = sp.get("dateTo") || "";
@@ -47,6 +48,14 @@ export async function GET(req: NextRequest) {
   } else if (companyId) {
     and.push({ OR: [{ acceptedByCompanyId: companyId }, { acceptedByCompanyId: null, inspector: { companyId } }] });
   }
+  if (managerId) {
+    and.push({
+      OR: [
+        { acceptedByCompany: { accountManagerId: managerId } },
+        { acceptedByCompanyId: null, inspector: { company: { accountManagerId: managerId } } },
+      ],
+    });
+  }
   if (and.length) where.AND = and;
   if (q) {
     where.OR = [
@@ -55,6 +64,8 @@ export async function GET(req: NextRequest) {
       { customerMobile: { contains: q, mode: "insensitive" } },
       { make: { contains: q, mode: "insensitive" } },
       { model: { contains: q, mode: "insensitive" } },
+      { vin: { contains: q, mode: "insensitive" } },
+      { customerEmail: { contains: q, mode: "insensitive" } },
     ];
   }
   if (dateFrom || dateTo) {
@@ -63,7 +74,7 @@ export async function GET(req: NextRequest) {
     if (dateTo) (where.scheduledAt as Prisma.DateTimeFilter).lte = new Date(`${dateTo}T23:59:59`);
   }
 
-  const [total, rows, grouped, companies] = await Promise.all([
+  const [total, rows, grouped, companies, managers] = await Promise.all([
     prisma.inspectionJob.count({ where }),
     prisma.inspectionJob.findMany({
       where,
@@ -71,12 +82,24 @@ export async function GET(req: NextRequest) {
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: {
-        inspector: { select: { id: true, name: true, company: { select: { id: true, name: true } } } },
-        acceptedByCompany: { select: { id: true, name: true } },
+        inspector: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            company: { select: { id: true, name: true, accountManager: { select: { id: true, name: true } } } },
+          },
+        },
+        acceptedByCompany: { select: { id: true, name: true, accountManager: { select: { id: true, name: true } } } },
+        report: { select: { verifiedAt: true, verifiedByName: true, returnedAt: true, returnNote: true, sentAt: true } },
       },
     }),
     prisma.inspectionJob.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.inspectionCompany.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.accountManager.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
@@ -114,7 +137,27 @@ export async function GET(req: NextRequest) {
     vehicle: [j.year, j.make, j.model].filter(Boolean).join(" ") || "Vehicle",
     location: [j.city || j.address, j.emirate].filter(Boolean).join(", "),
     inspector: j.inspector ? { id: j.inspector.id, name: j.inspector.name } : null,
-    company: j.acceptedByCompany ?? j.inspector?.company ?? null,
+    company: (() => {
+      const c = j.acceptedByCompany ?? j.inspector?.company ?? null;
+      return c ? { id: c.id, name: c.name } : null;
+    })(),
+    accountManager: (j.acceptedByCompany ?? j.inspector?.company)?.accountManager ?? null,
+    inspectorPhone: j.inspector?.phone ?? null,
+    vin: j.vin,
+    address: [j.address, j.city, j.emirate].filter(Boolean).join(", "),
+    acceptedAt: j.acceptedAt ? j.acceptedAt.toISOString() : null,
+    startedAt: j.startedAt ? j.startedAt.toISOString() : null,
+    reportSubmittedAt: j.reportSubmittedAt ? j.reportSubmittedAt.toISOString() : null,
+    completedAt: j.completedAt ? j.completedAt.toISOString() : null,
+    review: j.report
+      ? {
+          verifiedAt: j.report.verifiedAt ? j.report.verifiedAt.toISOString() : null,
+          verifiedByName: j.report.verifiedByName,
+          returnedAt: j.report.returnedAt ? j.report.returnedAt.toISOString() : null,
+          returnNote: j.report.returnNote,
+          sentAt: j.report.sentAt ? j.report.sentAt.toISOString() : null,
+        }
+      : null,
     scheduledAt: j.scheduledAt ? j.scheduledAt.toISOString() : null,
     scheduledSlot: j.scheduledSlot,
     fee: j.fee,
@@ -142,5 +185,6 @@ export async function GET(req: NextRequest) {
     commission: revenue - payouts,
     currency: process.env.NEXT_PUBLIC_CURRENCY || "AED",
     companies,
+    managers,
   });
 }

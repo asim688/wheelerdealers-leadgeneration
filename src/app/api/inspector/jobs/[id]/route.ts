@@ -92,6 +92,8 @@ export async function GET(
           keysCount: job.report.keysCount,
           spareTyre: job.report.spareTyre,
           generatedAt: job.report.generatedAt.toISOString(),
+          returnedAt: job.report.returnedAt?.toISOString() ?? null,
+          returnNote: job.report.returnNote,
         }
       : null,
     progress: {

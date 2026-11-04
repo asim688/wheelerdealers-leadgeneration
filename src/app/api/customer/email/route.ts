@@ -7,7 +7,7 @@ import { rateLimitRequest } from "@/lib/rateLimit";
 export const runtime = "nodejs";
 
 /**
- * POST /api/customer/email — body { email, proofs }.
+ * POST /api/customer/email — body { email, proofs, name? }.
  * Saves the signed-in customer's email once it has been verified by code.
  * Verified once per account; changing it later needs a new verification.
  */
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Please sign in with your mobile number first.", loginRequired: true }, { status: 401 });
   }
 
-  let body: { email?: string; proofs?: unknown };
+  let body: { email?: string; proofs?: unknown; name?: string };
   try {
     body = await req.json();
   } catch {
@@ -37,7 +37,11 @@ export async function POST(req: NextRequest) {
 
   const customer = await prisma.customer.update({
     where: { id: customerId },
-    data: { email, emailVerifiedAt: new Date() },
+    data: {
+      email,
+      emailVerifiedAt: new Date(),
+      ...(typeof body.name === "string" && body.name.trim() ? { name: body.name.trim().slice(0, 120) } : {}),
+    },
     select: { id: true, mobile: true, name: true, email: true, emailVerifiedAt: true },
   });
   return NextResponse.json({ ok: true, customer });

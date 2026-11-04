@@ -401,6 +401,12 @@ export default function InspectionRunner({
             </p>
           </div>
         </div>
+        {!readOnly && savedReport?.returnNote && (
+          <div className="border-t border-red-100 bg-red-50 px-4 py-2 text-xs text-red-800">
+            <span className="font-semibold">Returned by The Wheeler Dealers for correction:</span> {savedReport.returnNote}
+            <span className="text-red-600"> — make the change, then submit again from &ldquo;Vehicle details, comments &amp; submit&rdquo;.</span>
+          </div>
+        )}
         {!online && (
           <div className="bg-amber-50 px-4 py-1.5 text-center text-[11px] font-medium text-amber-700">
             You&apos;re offline. Your entries are saved on this device and will sync automatically when the connection returns.

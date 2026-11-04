@@ -239,11 +239,16 @@ model InspectionCompany {
   // Admin approval workflow: pending | approved | suspended
   approvalStatus String @default("pending")
 
+  // Wheeler Dealers staff member who verifies this company's reports.
+  accountManagerId String?
+  accountManager   AccountManager? @relation(fields: [accountManagerId], references: [id], onDelete: SetNull)
+
   inspectors Inspector[]
   jobs       InspectionJob[] @relation("CompanyJobs")
   documents  CompanyDocument[]
 
   @@index([approvalStatus])
+  @@index([accountManagerId])
 }
 
 /// Registration documents (trade licence, VAT certificate, extras). Stored in the
@@ -326,6 +331,38 @@ model OtpCode {
 
 /// Simple key-value store for admin-configurable platform settings
 /// (e.g. inspection customer price, partner payout amount).
+/// Wheeler Dealers staff member ("Account Manager") who verifies the reports
+/// of the inspection companies the super admin assigns to them.
+model AccountManager {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  phone           String?
+  passwordHash    String
+  active          Boolean   @default(true)
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+
+  companies InspectionCompany[]
+}
+
+/// Audit trail of the report review: submissions, reviewer edits, returns to
+/// the inspector and approvals (who did what, when).
+model ReportActivity {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  action    String   // submitted | edited | returned | approved
+  detail    String?  // human-readable summary (e.g. field changes, return note)
+  actorType String   // inspector | manager | admin
+  actorId   String?
+  actorName String?
+  createdAt DateTime @default(now())
+
+  @@index([jobId, createdAt])
+}
+
 /// One-time codes proving ownership of an email address or UAE mobile
 /// (company, Point of Contact, inspector, customer email). SMS codes sent via
 /// Message Central keep "mc:<verificationId>" in codeHash.
@@ -428,9 +465,10 @@ model InspectionJob {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  items  InspectionItem[]
-  photos InspectionPhoto[]
-  report InspectionReport?
+  items    InspectionItem[]
+  photos   InspectionPhoto[]
+  report   InspectionReport?
+  activity ReportActivity[]
 
   @@index([status])
   @@index([assignedInspectorId])
@@ -504,6 +542,13 @@ model InspectionReport {
   engineConfig    String?  // e.g. "4-cylinder"
   keysCount       Int?
   spareTyre       String?  // Available | Not available | Repair kit
+  // Wheeler Dealers verification (account manager / super admin) before the
+  // report is released to the customer with the red verification stamp.
+  verifiedAt      DateTime?
+  verifiedById    String?  // AccountManager id, or "admin"
+  verifiedByName  String?
+  returnedAt      DateTime? // set while the report is back with the inspector
+  returnNote      String?
   generatedAt     DateTime @default(now())
   sentAt          DateTime?
 }

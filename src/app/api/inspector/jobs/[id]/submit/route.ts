@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { getInspectorId } from "@/lib/auth";
-import { getBaseUrl, sendEmail } from "@/lib/inspection";
+import { getBaseUrl } from "@/lib/inspection";
+import { logActivity, notifyReportSubmitted } from "@/lib/review";
 import { isRecordable } from "@/lib/inspectionChecklist";
 
 export const runtime = "nodejs";
@@ -12,9 +13,9 @@ export const runtime = "nodejs";
  * ---------------------------------------------------------------------------
  * The inspection company submits its inspection: stores the Section 01
  * vehicle details and Section 12 inspector comments on the InspectionReport
- * and moves the job to "report_submitted". Admin review then finalises the
- * job (status "completed"), which is when the Wheeler Dealers report link is
- * delivered to the customer.
+ * and moves the job to "report_submitted". The company's Account Manager (or
+ * the super admin) then verifies it — edit, return to the inspector, or
+ * approve — and only an approved report is delivered to the customer.
  *
  * The Wheeler Dealers documents facts — nothing here scores, grades, or
  * recommends the vehicle; the customer makes the decision.
@@ -40,6 +41,12 @@ export async function POST(
     return NextResponse.json(
       { error: "Start the inspection before submitting." },
       { status: 400 },
+    );
+  }
+  if (["report_submitted", "completed"].includes(job.status)) {
+    return NextResponse.json(
+      { error: "This report is already submitted and awaiting Wheeler Dealers verification." },
+      { status: 409 },
     );
   }
 
@@ -96,7 +103,14 @@ export async function POST(
     recommendations: null,
     overallScore: null,
     verdict: null,
+    // A (re)submission starts a fresh review.
+    verifiedAt: null,
+    verifiedById: null,
+    verifiedByName: null,
+    returnedAt: null,
+    returnNote: null,
   };
+  const resubmitted = !!(await prisma.inspectionReport.findUnique({ where: { jobId: job.id }, select: { returnedAt: true } }))?.returnedAt;
 
   // A stable, unguessable token for the public customer report link.
   const reportToken = job.reportToken ?? crypto.randomBytes(16).toString("hex");
@@ -113,15 +127,15 @@ export async function POST(
     }),
   ]);
 
-  // Notify admin that an inspection was submitted and awaits finalisation.
-  const adminEmail = process.env.ADMIN_EMAIL || "admin@thewheelerdealers.com";
-  await sendEmail(
-    adminEmail,
-    `Inspection submitted — ${job.jobCode}`,
-    `<p>Inspection ${job.jobCode} has been submitted and is awaiting review.</p>
-<p>${recorded} of ${recordable.length} parameters recorded.</p>
-<p>Finalise it in the admin dashboard to deliver the report to the customer.</p>`,
+  const inspector = await prisma.inspector.findUnique({ where: { id: inspectorId }, select: { name: true } });
+  await logActivity(
+    job.id,
+    "submitted",
+    { type: "inspector", id: inspectorId, name: inspector?.name ?? null },
+    `${resubmitted ? "Re-submitted" : "Submitted"}: ${recorded} of ${recordable.length} parameters recorded.`,
   );
+  // Notify the company's Account Manager (or the super admin) to verify it.
+  await notifyReportSubmitted(job.id, resubmitted);
 
   const reportUrl = `${getBaseUrl()}/inspection/report/${reportToken}`;
   return NextResponse.json({ ok: true, recorded, total: recordable.length, summary, reportUrl });

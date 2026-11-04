@@ -550,6 +550,8 @@ export interface InspectorJob {
   payout?: number | null;
   currency?: string;
   completedAt?: string | null;
+  /** Report sent back by Wheeler Dealers for correction. */
+  returned?: boolean;
 }
 
 /** A job row in the marketplace Available pool (no customer contact yet). */
@@ -591,6 +593,9 @@ export interface InspectorReportFields {
   keysCount: number | null;
   spareTyre: string | null;
   generatedAt: string;
+  /** Set while the report is back with the inspector for correction. */
+  returnedAt?: string | null;
+  returnNote?: string | null;
 }
 
 /** A photo attached to a job / item. */
@@ -637,6 +642,22 @@ export interface AdminInspectionJob {
   inspector: { id: string; name: string } | null;
   /** The inspection company this job belongs to (accepted it / its inspector's company). */
   company: { id: string; name: string } | null;
+  /** Wheeler Dealers account manager who verifies this company's reports. */
+  accountManager?: { id: string; name: string } | null;
+  inspectorPhone?: string | null;
+  vin?: string | null;
+  address?: string;
+  acceptedAt?: string | null;
+  startedAt?: string | null;
+  reportSubmittedAt?: string | null;
+  completedAt?: string | null;
+  review?: {
+    verifiedAt: string | null;
+    verifiedByName: string | null;
+    returnedAt: string | null;
+    returnNote: string | null;
+    sentAt: string | null;
+  } | null;
   scheduledAt: string | null;
   scheduledSlot: string | null;
   fee: number | null;
@@ -665,6 +686,7 @@ export interface AdminInspectionsResponse {
   commission?: number;
   currency?: string;
   companies: Array<{ id: string; name: string }>;
+  managers?: Array<{ id: string; name: string }>;
 }
 
 /** An inspection company as seen by the admin roster. */

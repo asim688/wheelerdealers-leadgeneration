@@ -63,6 +63,10 @@ interface ReportData {
   sections: ReportSection[];
   coverPhoto: Photo | null;
   photoGroups: Array<{ group: string; photos: Photo[] }>;
+  /** Wheeler Dealers verification (red stamp); null until a reviewer approves. */
+  verification: { verifiedAt: string; verifiedByName: string } | null;
+  /** Reviewer preview of a report not yet released to the customer. */
+  preview?: boolean;
 }
 
 const BRAND = {
@@ -84,14 +88,16 @@ function dash(v: string | number | null | undefined): string {
   return v == null || v === "" ? "—" : String(v);
 }
 
-export default function InspectionReportView({ token }: { token: string }) {
+export default function InspectionReportView({ token, previewJobId }: { token?: string; previewJobId?: string }) {
   const [data, setData] = useState<ReportData | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "notfound">("loading");
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/inspection/report/${token}`);
+        const res = await fetch(
+          previewJobId ? `/api/review/jobs/${previewJobId}/report` : `/api/inspection/report/${token}`,
+        );
         if (res.ok) {
           setData(await res.json());
           setState("ok");
@@ -102,7 +108,7 @@ export default function InspectionReportView({ token }: { token: string }) {
         setState("notfound");
       }
     })();
-  }, [token]);
+  }, [token, previewJobId]);
 
   if (state === "loading") {
     return (
@@ -162,6 +168,12 @@ export default function InspectionReportView({ token }: { token: string }) {
         </div>
       </header>
 
+      {data.preview && (
+        <div className="mx-auto mt-4 max-w-[210mm] rounded-md border-2 border-dashed border-amber-400 bg-amber-50 px-4 py-2.5 text-center text-sm font-semibold text-amber-800">
+          PREVIEW — awaiting Wheeler Dealers verification. This report has not been sent to the customer.
+        </div>
+      )}
+
       <main className="mx-auto max-w-[210mm] py-6 print:py-0">
         <table className="report-sheet w-full border-collapse bg-white shadow-lg print:shadow-none">
           <thead className="report-head">
@@ -198,7 +210,10 @@ export default function InspectionReportView({ token }: { token: string }) {
                     </p>
                     <p className="text-sm text-neutral-600">Prepared for {data.customerName}</p>
                   </div>
-                  <BrandLogo size="md" />
+                  <div className="flex shrink-0 flex-col items-end gap-3">
+                    <BrandLogo size="md" />
+                    {data.verification && <VerifiedStamp v={data.verification} />}
+                  </div>
                 </div>
                 <div className="mt-4 h-1 w-full bg-[#2b7a8c]" />
 
@@ -344,6 +359,13 @@ export default function InspectionReportView({ token }: { token: string }) {
                 <div className="avoid-break mt-5 border-l-4 border-[#1e3a5f] bg-neutral-50 px-4 py-3">
                   <p className="text-xs font-bold tracking-wide text-[#1e3a5f]">{BRAND.name}</p>
                   <p className="mt-0.5 text-sm text-neutral-800">{BRAND.tagline}</p>
+                  {data.verification && (
+                    <p className="mt-2 text-[11px] leading-relaxed text-neutral-700">
+                      <b className="text-red-700">Report verified by The Wheeler Dealers</b> ({data.verification.verifiedByName},{" "}
+                      {fmtDate(data.verification.verifiedAt)}). Verification confirms this report was reviewed for completeness
+                      and consistency before release; it is not a certification of the vehicle.
+                    </p>
+                  )}
                   <p className="mt-2 text-[10px] text-neutral-500">
                     {BRAND.site} · {BRAND.email} · Report No. {data.jobCode}
                   </p>
@@ -354,6 +376,23 @@ export default function InspectionReportView({ token }: { token: string }) {
           </tbody>
         </table>
       </main>
+    </div>
+  );
+}
+
+/** Red "Report verified" stamp (CSS only, prints in colour). */
+function VerifiedStamp({ v }: { v: { verifiedAt: string; verifiedByName: string } }) {
+  return (
+    <div
+      className="navy rotate-[-6deg] select-none rounded-md border-[3px] border-red-700 px-3 py-1.5 text-center text-red-700"
+      style={{ boxShadow: "inset 0 0 0 1.5px #b91c1c", outline: "1.5px solid #b91c1c", outlineOffset: "2px" }}
+      aria-label={`Report verified by The Wheeler Dealers, ${v.verifiedByName}, ${fmtDate(v.verifiedAt)}`}
+    >
+      <p className="text-[8px] font-bold uppercase tracking-[0.22em]">The Wheeler Dealers</p>
+      <p className="text-base font-black uppercase leading-tight tracking-[0.12em]">✓ Report Verified</p>
+      <p className="text-[8px] font-semibold uppercase tracking-[0.12em]">
+        {v.verifiedByName} · {fmtDate(v.verifiedAt)}
+      </p>
     </div>
   );
 }
