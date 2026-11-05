@@ -302,7 +302,7 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
         </table>
       </div>
 
-      {reviewJobId && <ReportReview jobId={reviewJobId} onClose={() => setReviewJobId(null)} onChanged={() => void fetchJobs()} />}
+      {reviewJobId && <ReportReview jobId={reviewJobId} as="admin" onClose={() => setReviewJobId(null)} onChanged={() => void fetchJobs()} />}
 
       {/* Pagination */}
       {data && data.totalPages > 1 && (

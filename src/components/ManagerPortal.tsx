@@ -197,7 +197,7 @@ function ManagerDashboard({ manager, companies, onLogout }: { manager: Manager; 
     try {
       const p = new URLSearchParams({ queue });
       if (q.trim()) p.set("q", q.trim());
-      const res = await fetch(`/api/manager/jobs?${p.toString()}`);
+      const res = await fetch(`/api/manager/jobs?${p.toString()}`, { headers: { "x-review-as": "manager" } });
       if (res.status === 401) return onLogout();
       const d = await res.json();
       setJobs(d.jobs ?? []);
@@ -309,7 +309,7 @@ function ManagerDashboard({ manager, companies, onLogout }: { manager: Manager; 
         </div>
       </main>
 
-      {openJob && <ReportReview jobId={openJob} onClose={() => setOpenJob(null)} onChanged={() => void load()} />}
+      {openJob && <ReportReview jobId={openJob} as="manager" onClose={() => setOpenJob(null)} onChanged={() => void load()} />}
     </div>
   );
 }

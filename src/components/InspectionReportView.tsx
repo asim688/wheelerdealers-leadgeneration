@@ -88,7 +88,15 @@ function dash(v: string | number | null | undefined): string {
   return v == null || v === "" ? "—" : String(v);
 }
 
-export default function InspectionReportView({ token, previewJobId }: { token?: string; previewJobId?: string }) {
+export default function InspectionReportView({
+  token,
+  previewJobId,
+  previewAs,
+}: {
+  token?: string;
+  previewJobId?: string;
+  previewAs?: "admin" | "manager";
+}) {
   const [data, setData] = useState<ReportData | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "notfound">("loading");
 
@@ -97,6 +105,7 @@ export default function InspectionReportView({ token, previewJobId }: { token?: 
       try {
         const res = await fetch(
           previewJobId ? `/api/review/jobs/${previewJobId}/report` : `/api/inspection/report/${token}`,
+          previewAs ? { headers: { "x-review-as": previewAs } } : undefined,
         );
         if (res.ok) {
           setData(await res.json());
@@ -108,7 +117,7 @@ export default function InspectionReportView({ token, previewJobId }: { token?: 
         setState("notfound");
       }
     })();
-  }, [token, previewJobId]);
+  }, [token, previewJobId, previewAs]);
 
   if (state === "loading") {
     return (

@@ -7,7 +7,14 @@ export const metadata: Metadata = {
 };
 
 /** Reviewer preview of a report (account manager / super admin session required). */
-export default async function ReviewPreviewPage({ params }: { params: Promise<{ jobId: string }> }) {
+export default async function ReviewPreviewPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ jobId: string }>;
+  searchParams: Promise<{ as?: string }>;
+}) {
   const { jobId } = await params;
-  return <InspectionReportView previewJobId={jobId} />;
+  const { as } = await searchParams;
+  return <InspectionReportView previewJobId={jobId} previewAs={as === "manager" ? "manager" : as === "admin" ? "admin" : undefined} />;
 }

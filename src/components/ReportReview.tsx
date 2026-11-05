@@ -72,7 +72,19 @@ function fmtDateTime(iso: string | null) {
 
 type ItemDraft = { condition: string | null; comments: string | null; value: Record<string, string> | null };
 
-export default function ReportReview({ jobId, onClose, onChanged }: { jobId: string; onClose: () => void; onChanged: () => void }) {
+export default function ReportReview({
+  jobId,
+  as,
+  onClose,
+  onChanged,
+}: {
+  jobId: string;
+  /** Which portal is acting (recorded in the activity log). */
+  as: "admin" | "manager";
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const hdr = { "x-review-as": as };
   const [data, setData] = useState<ReviewData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"" | "approve" | "return" | "save">("");
@@ -84,7 +96,7 @@ export default function ReportReview({ jobId, onClose, onChanged }: { jobId: str
 
   const load = useCallback(async () => {
     setError("");
-    const res = await fetch(`/api/review/jobs/${jobId}`);
+    const res = await fetch(`/api/review/jobs/${jobId}`, { headers: { "x-review-as": as } });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(d.error || "Could not load this report.");
@@ -93,7 +105,7 @@ export default function ReportReview({ jobId, onClose, onChanged }: { jobId: str
     setData(d);
     setItems(Object.fromEntries((d.items as ReviewItem[]).map((i) => [i.itemKey, { condition: i.condition, comments: i.comments, value: i.value }])));
     setFields(Object.fromEntries(REPORT_FIELDS.map((f) => [f.key, d.report?.[f.key] == null ? "" : String(d.report[f.key])])));
-  }, [jobId]);
+  }, [jobId, as]);
 
   useEffect(() => {
     void load();
@@ -114,7 +126,7 @@ export default function ReportReview({ jobId, onClose, onChanged }: { jobId: str
     if (!data || !window.confirm(`Verify report ${data.job.jobCode}? It will be stamped "Report verified by The Wheeler Dealers" and sent to the customer.`)) return;
     setBusy("approve");
     setError("");
-    const res = await fetch(`/api/review/jobs/${jobId}/approve`, { method: "POST" });
+    const res = await fetch(`/api/review/jobs/${jobId}/approve`, { method: "POST", headers: hdr });
     const d = await res.json().catch(() => ({}));
     setBusy("");
     if (!res.ok) return setError(d.error || "Could not verify the report.");
@@ -128,7 +140,7 @@ export default function ReportReview({ jobId, onClose, onChanged }: { jobId: str
     setError("");
     const res = await fetch(`/api/review/jobs/${jobId}/return`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...hdr },
       body: JSON.stringify({ note }),
     });
     const d = await res.json().catch(() => ({}));
@@ -160,7 +172,7 @@ export default function ReportReview({ jobId, onClose, onChanged }: { jobId: str
     setError("");
     const res = await fetch(`/api/review/jobs/${jobId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...hdr },
       body: JSON.stringify({ items: changedItems, report: changedFields }),
     });
     const d = await res.json().catch(() => ({}));
@@ -211,7 +223,7 @@ export default function ReportReview({ jobId, onClose, onChanged }: { jobId: str
 
               {/* Actions */}
               <div className="flex flex-wrap gap-2">
-                <a href={`/review/${jobId}`} target="_blank" rel="noopener noreferrer" className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-100">
+                <a href={`/review/${jobId}?as=${as}`} target="_blank" rel="noopener noreferrer" className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-100">
                   Open full report preview ↗
                 </a>
                 {canAct && mode === "view" && (

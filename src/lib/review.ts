@@ -22,9 +22,16 @@ export type Reviewer =
   | { type: "admin"; id: "admin"; name: string }
   | { type: "manager"; id: string; name: string };
 
-/** The signed-in reviewer (super admin or a verified, active account manager). */
+/**
+ * The signed-in reviewer (super admin or a verified, active account manager).
+ * The calling screen states its role in the `x-review-as` header, so someone
+ * signed in to both the admin console and the manager portal is always
+ * recorded under the portal they actually acted from.
+ */
 export async function getReviewer(req: NextRequest): Promise<Reviewer | null> {
-  if (isAdmin(req)) return { type: "admin", id: "admin", name: "Super Admin" };
+  const as = req.headers.get("x-review-as");
+  if (as !== "manager" && isAdmin(req)) return { type: "admin", id: "admin", name: "Super Admin" };
+  if (as === "admin") return null;
   const managerId = getManagerId(req);
   if (!managerId) return null;
   const m = await prisma.accountManager.findUnique({
