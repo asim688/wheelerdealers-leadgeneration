@@ -94,7 +94,7 @@ export default function CustomerAccount() {
 
         {state === "guest" && (
           <div className="mx-auto max-w-md rounded-2xl border border-neutral-200 bg-white p-8 text-center shadow-sm">
-            <h1 className="text-xl font-bold text-neutral-900">{signup ? "Create your customer account" : "Sign in to your account"}</h1>
+            <h1 className="text-xl font-bold text-neutral-900">{signup ? "Create your Smart Motorist account" : "Sign in to your account"}</h1>
             <p className="mt-2 text-sm text-neutral-500">
               {signup
                 ? "Use your UAE mobile number — we'll send you a 6-digit code. Then verify your email and you're done."

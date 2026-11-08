@@ -191,7 +191,7 @@ export default function InspectorPortal() {
           <BrandLogo size="sm" />
           <button className="md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close">✕</button>
         </div>
-        <p className="mt-1 text-xs font-medium text-neutral-400">Inspection Company Portal</p>
+        <p className="mt-1 text-xs font-medium text-neutral-400">Inspector Portal</p>
 
         <nav className="mt-6 space-y-1 text-sm">
           <SideLink active={filter === "all"} onClick={() => pickFilter("all")}>Dashboard</SideLink>
@@ -639,7 +639,7 @@ function LoginForm({ onLoggedIn }: { onLoggedIn: (p: InspectorProfile, needsVeri
       <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
         <div className="mb-6 text-center">
           <div className="flex justify-center"><BrandLogo size="md" /></div>
-          <p className="mt-2 text-sm text-neutral-500">Inspection Company Portal</p>
+          <p className="mt-2 text-sm text-neutral-500">Inspector Portal</p>
         </div>
         <label className="mb-1.5 block text-sm font-medium text-neutral-700">Email</label>
         <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required placeholder="you@wheelerdealers.test" className="mb-4 w-full rounded-md border border-neutral-300 px-3 py-2.5 text-sm outline-none focus:border-red-500" />
@@ -650,10 +650,7 @@ function LoginForm({ onLoggedIn }: { onLoggedIn: (p: InspectorProfile, needsVeri
           {busy ? "Signing in…" : "Sign in"}
         </button>
         <p className="mt-4 text-center text-sm text-neutral-500">
-          New inspection company?{" "}
-          <Link href="/company?register=1" className="font-semibold text-red-600 hover:underline">
-            Apply to join
-          </Link>
+          Inspector accounts are created by your inspection company.
         </p>
         {isDev && (
           <p className="mt-4 text-center text-[11px] text-neutral-400">
