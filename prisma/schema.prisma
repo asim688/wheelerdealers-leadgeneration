@@ -243,12 +243,38 @@ model InspectionCompany {
   accountManagerId String?
   accountManager   AccountManager? @relation(fields: [accountManagerId], references: [id], onDelete: SetNull)
 
+  // Who verified (approved) this company's registration, and when — kept for the track record.
+  verifiedAt      DateTime?
+  verifiedByName  String?
+  verifiedByEmail String?
+  verifiedByRole  String?
+
   inspectors Inspector[]
   jobs       InspectionJob[] @relation("CompanyJobs")
   documents  CompanyDocument[]
+  activity   CompanyActivity[]
 
   @@index([approvalStatus])
   @@index([accountManagerId])
+}
+
+/// Track record of every registration / status decision on an inspection company
+/// (registered, approved, suspended, reinstated, activated, deactivated) with the
+/// staff member who made it.
+model CompanyActivity {
+  id        String   @id @default(cuid())
+  companyId String
+  company   InspectionCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  action    String   // registered | approved | suspended | reinstated | activated | deactivated | pending
+  actorName  String?
+  actorEmail String?
+  actorRole  String?  // super_admin | account_manager | company
+  ip         String?
+  userAgent  String?
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@index([companyId, createdAt])
 }
 
 /// Registration documents (trade licence, VAT certificate, extras). Stored in the

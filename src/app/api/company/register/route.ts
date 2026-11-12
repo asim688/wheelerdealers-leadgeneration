@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, getAdminEmail, createCompanyUploadToken, readVerificationProofs } from "@/lib/auth";
 import { sendEmail, getBaseUrl } from "@/lib/inspection";
-import { rateLimitRequest } from "@/lib/rateLimit";
+import { rateLimitRequest, clientIp } from "@/lib/rateLimit";
+import { logCompanyActivity } from "@/lib/adminCompany";
 import {
   normaliseEmail,
   normaliseIban,
@@ -169,6 +170,14 @@ export async function POST(req: NextRequest) {
       approvalStatus: "pending",
     },
   });
+
+  await logCompanyActivity(company.id, "registered", {
+    name: pocName,
+    email,
+    role: "company",
+    ip: clientIp(req),
+    userAgent: (req.headers.get("user-agent") ?? "").slice(0, 300),
+  }).catch(() => undefined);
 
   // Notify Super Admin, and confirm receipt to the company (+ PoC).
   await Promise.allSettled([

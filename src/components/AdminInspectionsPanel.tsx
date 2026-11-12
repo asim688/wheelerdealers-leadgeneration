@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import type {
   AdminInspectionsResponse,
   AdminInspectionJob,
@@ -12,7 +13,7 @@ import ReportReview from "./ReportReview";
  * company, track their status, and manage inspection companies.
  */
 
-const STATUS_TABS: Array<{ key: string; label: string }> = [
+export const STATUS_TABS: Array<{ key: string; label: string }> = [
   { key: "", label: "All" },
   { key: "payment_pending", label: "Payment Pending" },
   { key: "available", label: "Available" },
@@ -35,20 +36,30 @@ const STATUS_STYLES: Record<string, string> = {
   cancelled: "bg-red-100 text-red-700",
 };
 
-export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
+/**
+ * The jobs list. The status filter comes from the page's left sidebar; this
+ * panel keeps the search and the company / account-manager filters, Pricing
+ * and Export.
+ */
+export default function AdminInspectionsPanel({
+  status = "",
+  onCounts,
+  onUnauthorized,
+}: {
+  status?: string;
+  onCounts?: (counts: Record<string, number>) => void;
+  onUnauthorized: () => void;
+}) {
   const [data, setData] = useState<AdminInspectionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [managerId, setManagerId] = useState("");
   const [reviewJobId, setReviewJobId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [showManagers, setShowManagers] = useState(false);
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [page, setPage] = useState(1);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [showInspectors, setShowInspectors] = useState(false);
   const [showPricing, setShowPricing] = useState(false);
 
   useEffect(() => {
@@ -66,11 +77,15 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
       if (debouncedQ) p.set("q", debouncedQ);
       const res = await fetch(`/api/admin/inspections?${p.toString()}`);
       if (res.status === 401) return onUnauthorized();
-      if (res.ok) setData(await res.json());
+      if (res.ok) {
+        const d: AdminInspectionsResponse = await res.json();
+        setData(d);
+        onCounts?.(d.statusCounts);
+      }
     } finally {
       setLoading(false);
     }
-  }, [page, status, companyId, managerId, debouncedQ, onUnauthorized]);
+  }, [page, status, companyId, managerId, debouncedQ, onUnauthorized, onCounts]);
 
   useEffect(() => {
     void fetchJobs();
@@ -153,92 +168,18 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
   }
 
   const companies = data?.companies ?? [];
-  const counts = data?.statusCounts ?? {};
-  const revenue = data?.revenue ?? 0;
-  const payouts = data?.payouts ?? 0;
-  const commission = data?.commission ?? 0;
-  const currency = data?.currency ?? "AED";
 
   return (
     <div className="space-y-4">
-      {/* Stats strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-2xl font-bold text-neutral-900">{counts.all ?? 0}</p>
-          <p className="mt-1 text-xs font-medium text-neutral-500">Total jobs</p>
-        </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-2xl font-bold text-green-700">{counts.completed ?? 0}</p>
-          <p className="mt-1 text-xs font-medium text-neutral-500">Completed</p>
-        </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-2xl font-bold text-neutral-900">
-            {currency} {revenue.toLocaleString()}
-          </p>
-          <p className="mt-1 text-xs font-medium text-neutral-500">Revenue (completed)</p>
-        </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-2xl font-bold text-amber-700">
-            {currency} {payouts.toLocaleString()}
-          </p>
-          <p className="mt-1 text-xs font-medium text-neutral-500">Partner payouts</p>
-        </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-2xl font-bold text-red-700">
-            {currency} {commission.toLocaleString()}
-          </p>
-          <p className="mt-1 text-xs font-medium text-neutral-500">Commission</p>
-        </div>
-      </div>
-
-      {/* Header actions */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          {STATUS_TABS.map((t) => {
-            const c = t.key ? counts[t.key] : counts.all;
-            return (
-              <button
-                key={t.key || "all"}
-                onClick={() => setStatus(t.key)}
-                className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                  status === t.key ? "bg-red-600 text-white" : "border border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-                }`}
-              >
-                {t.label}
-                {typeof c === "number" && <span className="ml-1 opacity-70">{c}</span>}
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowPricing((s) => !s)} className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100">
-            Pricing
-          </button>
-          <button onClick={() => setShowInspectors((s) => !s)} className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100">
-            Manage Companies
-          </button>
-          <button onClick={() => setShowManagers((s) => !s)} className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100">
-            Account Managers
-          </button>
-          <button onClick={exportCsv} className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800">
-            Export
-          </button>
-        </div>
-      </div>
-
-      {showPricing && <PricingSettings onClose={() => setShowPricing(false)} onUnauthorized={onUnauthorized} />}
-      {showInspectors && <CompaniesManager onClose={() => setShowInspectors(false)} onChanged={fetchJobs} onUnauthorized={onUnauthorized} />}
-      {showManagers && <AccountManagersPanel onClose={() => setShowManagers(false)} onChanged={fetchJobs} onUnauthorized={onUnauthorized} />}
-
       {/* Filters */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search job ID, customer, email, vehicle, VIN…"
-          className="min-w-[220px] flex-1 rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500"
+          className="min-w-[220px] flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500"
         />
-        <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500">
+        <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500">
           <option value="">All companies</option>
           <option value="unassigned">Unassigned</option>
           {companies.map((c) => (
@@ -246,14 +187,22 @@ export default function AdminInspectionsPanel({ onUnauthorized }: { onUnauthoriz
           ))}
         </select>
         {(data?.managers?.length ?? 0) > 0 && (
-          <select value={managerId} onChange={(e) => setManagerId(e.target.value)} className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500">
+          <select value={managerId} onChange={(e) => setManagerId(e.target.value)} className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500">
             <option value="">All account managers</option>
             {data!.managers!.map((m) => (
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
         )}
+        <button onClick={() => setShowPricing((v) => !v)} className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100">
+          Pricing
+        </button>
+        <button onClick={exportCsv} className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800">
+          Export
+        </button>
       </div>
+
+      {showPricing && <PricingSettings onClose={() => setShowPricing(false)} onUnauthorized={onUnauthorized} />}
 
       {/* Table */}
       <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white">
@@ -359,7 +308,7 @@ function JobRow({
       </td>
       <td className="px-4 py-3">
         {job.company ? (
-          <p className="font-medium text-neutral-800">{job.company.name}</p>
+          <Link href={`/admin/inspections/companies/${job.company.id}`} className="font-medium text-neutral-800 hover:text-red-600 hover:underline" title="Open company page">{job.company.name}</Link>
         ) : (
           <span className="text-xs text-neutral-400">Unassigned</span>
         )}
@@ -528,7 +477,7 @@ function PricingSettings({ onClose, onUnauthorized }: { onClose: () => void; onU
     <div className="rounded-2xl border border-neutral-200 bg-white p-5">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="font-semibold text-neutral-900">Inspection Pricing</h3>
-        <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700">Close</button>
+        {onClose && <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700">Close</button>}
       </div>
       {loading ? (
         <p className="text-sm text-neutral-400">Loading…</p>
@@ -602,413 +551,6 @@ function JobDetails({ job: j }: { job: AdminInspectionJob }) {
   );
 }
 
-// --- Companies manager (multi-tenant) ----------------------------------------
-
-interface AdminCompany {
-  id: string;
-  name: string;
-  details: string | null;
-  email: string;
-  phone: string | null;
-  address: string | null;
-  city: string | null;
-  emirate: string | null;
-  lat: number | null;
-  lng: number | null;
-  pocName: string | null;
-  pocMobile: string | null;
-  pocEmail: string | null;
-  tradeLicense: string | null;
-  areas: string | null;
-  services: string | null;
-  bankAccountTitle: string | null;
-  bankAccountNumber: string | null;
-  bankIban: string | null;
-  bankName: string | null;
-  bankBranch: string | null;
-  emailVerifiedAt: string | null;
-  phoneVerifiedAt: string | null;
-  pocEmailVerifiedAt: string | null;
-  pocMobileVerifiedAt: string | null;
-  missingDocs: string[];
-  payoutGaps: string[];
-  approvalStatus: string;
-  active: boolean;
-  inspectorCount: number;
-  jobsAssigned: number;
-  jobsCompleted: number;
-  documents: Array<{ id: string; kind: string; label: string | null; fileName: string; sizeBytes: number; createdAt: string }>;
-  createdAt: string;
-}
-
-const DOC_KIND_LABEL: Record<string, string> = {
-  trade_license: "Trade License",
-  vat_certificate: "VAT Certificate",
-  iban_letter: "Bank IBAN Letter",
-};
-
-function fmtBytes(n: number): string {
-  return n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
-}
-
-function CompaniesManager({
-  onClose,
-  onChanged,
-  onUnauthorized,
-}: {
-  onClose: () => void;
-  onChanged: () => void;
-  onUnauthorized: () => void;
-}) {
-  const [list, setList] = useState<AdminCompany[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [openId, setOpenId] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/companies");
-      if (res.status === 401) return onUnauthorized();
-      if (res.ok) setList((await res.json()).companies);
-    } finally {
-      setLoading(false);
-    }
-  }, [onUnauthorized]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const [actionError, setActionError] = useState("");
-
-  async function patch(id: string, body: Record<string, unknown>) {
-    setActionError("");
-    const res = await fetch(`/api/admin/companies/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (res.status === 401) return onUnauthorized();
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setActionError(data.error || "Could not update the company.");
-    }
-    await load();
-    onChanged();
-  }
-
-  const pendingCount = list.filter((c) => c.approvalStatus === "pending").length;
-
-  return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold text-neutral-900">Inspection Companies</h3>
-          <p className="text-xs text-neutral-500">
-            Companies self-register at <span className="font-mono">/company</span>.
-            {pendingCount > 0 && (
-              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                {pendingCount} pending approval
-              </span>
-            )}
-          </p>
-        </div>
-        <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700">Close</button>
-      </div>
-
-      {actionError && (
-        <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</p>
-      )}
-      {loading ? (
-        <p className="text-sm text-neutral-400">Loading…</p>
-      ) : list.length === 0 ? (
-        <p className="text-sm text-neutral-400">No companies registered yet.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead>
-              <tr className="border-b border-neutral-100 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                <th className="px-3 py-2">Company</th>
-                <th className="px-3 py-2">Point of Contact</th>
-                <th className="px-3 py-2">Location</th>
-                <th className="px-3 py-2 text-center">Inspectors</th>
-                <th className="px-3 py-2 text-center">Jobs Assigned</th>
-                <th className="px-3 py-2 text-center">Jobs Completed</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((c) => (
-                <Fragment key={c.id}>
-                <tr className={`border-b border-neutral-50 last:border-0 ${openId === c.id ? "bg-neutral-50/60" : ""}`}>
-                  <td className="px-3 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setOpenId((cur) => (cur === c.id ? null : c.id))}
-                      className="text-left font-medium text-neutral-800 hover:text-red-600"
-                      title="View all registration details"
-                    >
-                      {c.name}
-                    </button>
-                    <p className="truncate text-xs text-neutral-500">
-                      {c.email}
-                      {c.tradeLicense ? ` · TL: ${c.tradeLicense}` : ""}
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {c.documents.length === 0 ? (
-                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">No documents</span>
-                      ) : (
-                        c.documents.map((d) => (
-                          <a
-                            key={d.id}
-                            href={`/api/admin/companies/${c.id}/documents/${d.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title={d.fileName}
-                            className="rounded border border-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-50"
-                          >
-                            {DOC_KIND_LABEL[d.kind] ?? d.label ?? d.fileName}
-                          </a>
-                        ))
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <p className="text-neutral-700">{c.pocName || "—"}</p>
-                    {c.pocMobile && (
-                      <a href={`tel:${c.pocMobile}`} className="text-xs text-red-600 hover:underline">{c.pocMobile}</a>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-neutral-600">
-                    {[c.city, c.emirate].filter(Boolean).join(", ") || c.areas || "—"}
-                  </td>
-                  <td className="px-3 py-2.5 text-center font-semibold text-neutral-800">{c.inspectorCount}</td>
-                  <td className="px-3 py-2.5 text-center font-semibold text-blue-700">{c.jobsAssigned}</td>
-                  <td className="px-3 py-2.5 text-center font-semibold text-green-700">{c.jobsCompleted}</td>
-                  <td className="px-3 py-2.5">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        c.approvalStatus === "approved"
-                          ? "bg-green-100 text-green-700"
-                          : c.approvalStatus === "pending"
-                            ? "bg-amber-100 text-amber-700"
-                            : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      {c.approvalStatus}
-                    </span>
-                    {!c.active && (
-                      <span className="ml-1 rounded bg-neutral-100 px-1.5 text-[10px] text-neutral-500">inactive</span>
-                    )}
-                    {c.payoutGaps.length > 0 && (
-                      <span className="mt-1 block w-fit rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title={`Missing: ${c.payoutGaps.join(", ")}`}>
-                        payout incomplete
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => setOpenId((cur) => (cur === c.id ? null : c.id))}
-                        className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
-                          openId === c.id ? "border-neutral-800 bg-neutral-800 text-white" : "border-neutral-300 text-neutral-700 hover:bg-neutral-100"
-                        }`}
-                      >
-                        {openId === c.id ? "Hide" : "Details"}
-                      </button>
-                      {c.approvalStatus === "pending" && (
-                        <button onClick={() => patch(c.id, { approvalStatus: "approved" })} className="rounded-md bg-green-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-green-700">
-                          Approve
-                        </button>
-                      )}
-                      {c.approvalStatus === "approved" && (
-                        <button onClick={() => patch(c.id, { approvalStatus: "suspended" })} className="rounded-md border border-red-300 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">
-                          Suspend
-                        </button>
-                      )}
-                      {c.approvalStatus === "suspended" && (
-                        <button onClick={() => patch(c.id, { approvalStatus: "approved" })} className="rounded-md border border-green-300 bg-green-50 px-2.5 py-1 text-[11px] font-medium text-green-700">
-                          Reinstate
-                        </button>
-                      )}
-                      <button
-                        onClick={() => patch(c.id, { active: !c.active })}
-                        className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
-                          c.active ? "border-neutral-300 text-neutral-600 hover:bg-neutral-100" : "border-green-300 bg-green-50 text-green-700"
-                        }`}
-                      >
-                        {c.active ? "Deactivate" : "Activate"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                {openId === c.id && (
-                  <tr className="border-b border-neutral-100 bg-neutral-50/60">
-                    <td colSpan={8} className="px-3 pb-4 pt-1">
-                      {/* Fixed to the visible card width so it doesn't scroll with the wide table. */}
-                      <div className="w-[calc(100vw-22rem)] max-w-[1040px] min-w-[560px]">
-                        <CompanyDetails company={c} />
-                      </div>
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Full registration record for one company (what the company filled in) ─ */
-
-function CompanyDetails({ company: c }: { company: AdminCompany }) {
-  const mapUrl =
-    c.lat != null && c.lng != null
-      ? `https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lng}`
-      : [c.address, c.city, c.emirate].some(Boolean)
-        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([c.address, c.city, c.emirate].filter(Boolean).join(", "))}`
-        : null;
-  const registered = new Date(c.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  const hasBank = [c.bankAccountTitle, c.bankAccountNumber, c.bankIban, c.bankName, c.bankBranch].some(Boolean);
-
-  return (
-    <div className="grid gap-3 md:grid-cols-2">
-      <DetailGroup title="Company">
-        <DetailRow k="Company name" v={c.name} />
-        <DetailRow k="Company details" v={c.details} />
-        <DetailRow k="Company email" v={c.email} href={`mailto:${c.email}`} verifiedAt={c.emailVerifiedAt} />
-        <DetailRow k="Company mobile" v={c.phone} href={c.phone ? `tel:${c.phone}` : undefined} verifiedAt={c.phoneVerifiedAt} />
-        <DetailRow k="Trade license no." v={c.tradeLicense} />
-        <DetailRow k="Services" v={c.services} />
-        <DetailRow k="Registered" v={registered} />
-        <DetailRow k="Account status" v={`${c.approvalStatus}${c.active ? "" : " · login inactive"}`} />
-      </DetailGroup>
-
-      <DetailGroup title="Company documents">
-        {c.documents.length === 0 ? (
-          <p className="text-xs text-amber-700">No documents uploaded.</p>
-        ) : (
-          <ul className="divide-y divide-neutral-100">
-            {c.documents.map((d) => (
-              <li key={d.id} className="flex items-center justify-between gap-3 py-1.5">
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-medium text-neutral-800">{DOC_KIND_LABEL[d.kind] ?? d.label ?? "Document"}</p>
-                  <p className="truncate text-[11px] text-neutral-500">{d.fileName} · {fmtBytes(d.sizeBytes)}</p>
-                </div>
-                <a
-                  href={`/api/admin/companies/${c.id}/documents/${d.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
-                >
-                  Open
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-        {c.missingDocs.map((m) => (
-          <p key={m} className="mt-1 text-[11px] text-amber-700">{m} missing</p>
-        ))}
-      </DetailGroup>
-
-      <DetailGroup title="Location">
-        <DetailRow k="Address" v={c.address} />
-        <DetailRow k="City" v={c.city} />
-        <DetailRow k="Emirate" v={c.emirate} />
-        <DetailRow k="Service areas" v={c.areas} />
-        <DetailRow k="Map pin" v={c.lat != null && c.lng != null ? `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}` : null} href={mapUrl ?? undefined} />
-      </DetailGroup>
-
-      <DetailGroup title="Point of Contact (gets job alerts)">
-        <DetailRow k="PoC name" v={c.pocName} />
-        <DetailRow k="PoC mobile (WhatsApp)" v={c.pocMobile} href={c.pocMobile ? `https://wa.me/${c.pocMobile.replace(/\D/g, "")}` : undefined} verifiedAt={c.pocMobileVerifiedAt} />
-        <DetailRow k="PoC email" v={c.pocEmail} href={c.pocEmail ? `mailto:${c.pocEmail}` : undefined} verifiedAt={c.pocEmailVerifiedAt} />
-      </DetailGroup>
-
-      <DetailGroup title="Payout details">
-        {c.payoutGaps.length > 0 && (
-          <p className="mb-2 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
-            Can&apos;t accept new jobs until complete. Missing: {c.payoutGaps.join(", ")}.
-          </p>
-        )}
-        {hasBank ? (
-          <>
-            <DetailRow k="Account title" v={c.bankAccountTitle} />
-            <DetailRow k="Account number" v={c.bankAccountNumber} mono />
-            <DetailRow k="IBAN" v={c.bankIban} mono />
-            <DetailRow k="Bank name" v={c.bankName} />
-            <DetailRow k="Bank branch" v={c.bankBranch} />
-          </>
-        ) : (
-          <p className="text-xs text-neutral-500">Not provided — commissions cannot be settled until the company adds bank details.</p>
-        )}
-      </DetailGroup>
-
-      <DetailGroup title="Marketplace activity">
-        <DetailRow k="Inspectors" v={String(c.inspectorCount)} />
-        <DetailRow k="Jobs assigned" v={String(c.jobsAssigned)} />
-        <DetailRow k="Jobs completed" v={String(c.jobsCompleted)} />
-      </DetailGroup>
-    </div>
-  );
-}
-
-function DetailGroup({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-3">
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</p>
-      {children}
-    </div>
-  );
-}
-
-function DetailRow({
-  k,
-  v,
-  href,
-  mono = false,
-  verifiedAt,
-}: {
-  k: string;
-  v: string | null | undefined;
-  href?: string;
-  mono?: boolean;
-  /** When provided (even null), shows a Verified / Not verified badge. */
-  verifiedAt?: string | null;
-}) {
-  const text = v && v.trim() ? v : null;
-  return (
-    <div className="grid grid-cols-[9rem_1fr] gap-3 py-1 text-xs">
-      <span className="text-neutral-500">
-        {k}
-        {verifiedAt !== undefined && text && (
-          verifiedAt ? (
-            <span className="ml-1 rounded bg-green-100 px-1 text-[10px] font-semibold text-green-700" title={`Verified ${new Date(verifiedAt).toLocaleString("en-GB")}`}>✓ verified</span>
-          ) : (
-            <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-700">not verified</span>
-          )
-        )}
-      </span>
-      {text ? (
-        href ? (
-          <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer" className={`break-words text-red-600 hover:underline ${mono ? "font-mono" : ""}`}>
-            {text}
-          </a>
-        ) : (
-          <span className={`break-words text-neutral-800 ${mono ? "font-mono" : ""}`}>{text}</span>
-        )
-      ) : (
-        <span className="text-neutral-400">—</span>
-      )}
-    </div>
-  );
-}
-
 // --- Account Managers (Wheeler Dealers staff who verify reports) -------------
 
 interface AdminManager {
@@ -1023,12 +565,12 @@ interface AdminManager {
   awaitingReview: number;
 }
 
-function AccountManagersPanel({
+export function AccountManagersPanel({
   onClose,
   onChanged,
   onUnauthorized,
 }: {
-  onClose: () => void;
+  onClose?: () => void;
   onChanged: () => void;
   onUnauthorized: () => void;
 }) {
@@ -1146,7 +688,7 @@ function AccountManagersPanel({
           <button onClick={() => setShowAdd((s) => !s)} className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700">
             {showAdd ? "Cancel" : "+ Add account manager"}
           </button>
-          <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700">Close</button>
+          {onClose && <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700">Close</button>}
         </div>
       </div>
 

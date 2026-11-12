@@ -42,7 +42,10 @@ export async function GET(req: NextRequest) {
 
   const where: Prisma.InspectionJobWhereInput = {};
   const and: Prisma.InspectionJobWhereInput[] = [];
-  if (STATUSES.includes(status)) where.status = status;
+  // `status` may be a comma-separated list (e.g. the company page's "Assigned" view).
+  const wanted = status.split(",").map((x) => x.trim()).filter((x) => STATUSES.includes(x));
+  if (wanted.length === 1) where.status = wanted[0];
+  else if (wanted.length > 1) where.status = { in: wanted };
   if (companyId === "unassigned") {
     and.push({ acceptedByCompanyId: null, OR: [{ assignedInspectorId: null }, { inspector: { companyId: null } }] });
   } else if (companyId) {

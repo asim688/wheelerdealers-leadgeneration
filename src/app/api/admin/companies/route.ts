@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/auth";
-import { missingDocs, payoutGaps } from "@/lib/companyCompliance";
+import { COMPANY_INCLUDE, serializeCompany } from "@/lib/adminCompany";
 
 export const runtime = "nodejs";
 
@@ -18,13 +18,7 @@ export async function GET(req: NextRequest) {
 
   const companies = await prisma.inspectionCompany.findMany({
     orderBy: [{ approvalStatus: "asc" }, { createdAt: "desc" }],
-    include: {
-      _count: { select: { inspectors: true, jobs: true } },
-      documents: {
-        orderBy: { createdAt: "asc" },
-        select: { id: true, kind: true, label: true, fileName: true, sizeBytes: true, createdAt: true },
-      },
-    },
+    include: COMPANY_INCLUDE,
   });
 
   // Per-company completed counts in one query.
@@ -38,41 +32,6 @@ export async function GET(req: NextRequest) {
   );
 
   return NextResponse.json({
-    companies: companies.map((c) => ({
-      id: c.id,
-      name: c.name,
-      details: c.details,
-      email: c.email,
-      phone: c.phone,
-      address: c.address,
-      city: c.city,
-      emirate: c.emirate,
-      lat: c.lat,
-      lng: c.lng,
-      pocName: c.pocName,
-      pocMobile: c.pocMobile,
-      pocEmail: c.pocEmail,
-      tradeLicense: c.tradeLicense,
-      areas: c.areas,
-      services: c.services,
-      bankAccountTitle: c.bankAccountTitle,
-      bankAccountNumber: c.bankAccountNumber,
-      bankIban: c.bankIban,
-      bankName: c.bankName,
-      bankBranch: c.bankBranch,
-      emailVerifiedAt: c.emailVerifiedAt?.toISOString() ?? null,
-      phoneVerifiedAt: c.phoneVerifiedAt?.toISOString() ?? null,
-      pocEmailVerifiedAt: c.pocEmailVerifiedAt?.toISOString() ?? null,
-      pocMobileVerifiedAt: c.pocMobileVerifiedAt?.toISOString() ?? null,
-      missingDocs: missingDocs(c.documents.map((d) => d.kind)),
-      payoutGaps: payoutGaps(c, c.documents.map((d) => d.kind)),
-      approvalStatus: c.approvalStatus,
-      active: c.active,
-      inspectorCount: c._count.inspectors,
-      jobsAssigned: c._count.jobs,
-      jobsCompleted: completedMap.get(c.id) ?? 0,
-      documents: c.documents.map((d) => ({ ...d, createdAt: d.createdAt.toISOString() })),
-      createdAt: c.createdAt.toISOString(),
-    })),
+    companies: companies.map((c) => serializeCompany(c, completedMap.get(c.id) ?? 0)),
   });
 }
