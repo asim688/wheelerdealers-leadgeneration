@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import type { InspectionCompany, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAdminEmail } from "@/lib/auth";
+import { getAdminIdentity } from "@/lib/adminIdentity";
 import { clientIp } from "@/lib/rateLimit";
 import { missingDocs, payoutGaps } from "@/lib/companyCompliance";
 
@@ -22,10 +23,12 @@ export interface Actor {
 }
 
 /** Who is acting. The Super Admin login is a single shared account, so the person's own name comes from the request. */
-export function adminActor(req: NextRequest, personName?: string): Actor {
+export async function adminActor(req: NextRequest, personName?: string): Promise<Actor> {
+  const who = await getAdminIdentity(req);
   return {
-    name: (personName ?? "").trim() || "Super Admin",
-    email: getAdminEmail(),
+    // Staff logins already carry the person's name; the shared owner login types it in.
+    name: who?.staff ? who.name : (personName ?? "").trim() || "Super Admin",
+    email: who?.email ?? getAdminEmail(),
     role: "super_admin",
     ip: clientIp(req),
     userAgent: (req.headers.get("user-agent") ?? "").slice(0, 300),

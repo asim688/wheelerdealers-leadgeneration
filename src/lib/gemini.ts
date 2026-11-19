@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { dubaiNow, formatTimeLabel } from "./bookingTime";
 import type {
   BuyCriteria,
   ChatMessage,
@@ -306,12 +307,11 @@ export interface InspectionBookingExtraction {
   city: string;
   emirate: string;
   date: string; // ISO date YYYY-MM-DD, empty if unknown
-  slot: string; // one of the offered slots, empty if unknown
+  slot: string; // preferred time "hh:mm AM/PM" between 08:00 AM and 08:00 PM, empty if unknown
   readyToBook: boolean;
   reply: string;
 }
 
-const BOOKING_SLOTS = ["09:00 AM", "11:00 AM", "01:00 PM", "03:00 PM", "05:00 PM"];
 const BOOKING_EMIRATES = [
   "Dubai",
   "Abu Dhabi",
@@ -323,11 +323,13 @@ const BOOKING_EMIRATES = [
 ];
 
 function bookingSystemInstruction(): string {
-  const today = new Date().toISOString().slice(0, 10);
+  const now = dubaiNow();
+  const today = now.date;
+  const currentTime = formatTimeLabel(now.minutes);
   return `You are the AI assistant for "The Wheeler Dealers", a UAE car marketplace.
 You are handling the BOOK INSPECTION flow: through a friendly conversation you collect everything needed to book a mobile vehicle inspection, so the customer never has to fill in a form.
 
-Today's date is ${today} (use it to resolve relative dates like "tomorrow" or "this Friday" into a YYYY-MM-DD value).
+Today's date is ${today} and the current time in the UAE is ${currentTime} (use them to resolve relative dates like "tomorrow" or "this Friday" into a YYYY-MM-DD value, and to avoid times that have already passed today).
 
 On EVERY turn you must:
 1. Read the ENTIRE conversation and extract the best-known values for every field.
@@ -338,7 +340,7 @@ Ask in exactly these TWO grouped steps, in order:
 
 - STEP 1 (Contact + Vehicle): in ONE friendly question, ask the customer to share ALL of these together — their full name, mobile number and email address, and the car's make, model and 4-digit year, plus any other details they would like us to know. A chassis number / VIN is optional; if they give one, capture it in "vin". Put any extra free-text remarks (special requests, notes about the car, when they are available, etc.) in "notes".
 
-- STEP 2 (Location, date & time): in ONE friendly question, ask together for the inspection location (street address AND which emirate), the preferred date, and the time slot. The emirate MUST be one of: ${BOOKING_EMIRATES.join(", ")}. The slot MUST be exactly one of: ${BOOKING_SLOTS.join(", ")}. Resolve relative dates (e.g. "tomorrow", "this Friday") to a YYYY-MM-DD value that is today or later; if the customer names a rough time, map it to the closest offered slot.
+- STEP 2 (Location, date & time): in ONE friendly question, ask together for the inspection location (street address AND which emirate), the preferred date, and the preferred time. The emirate MUST be one of: ${BOOKING_EMIRATES.join(", ")}. The time can be ANY time between 08:00 AM and 08:00 PM, written as "hh:mm AM/PM" in "slot" (e.g. "02:30 PM"); if the customer names a rough time ("afternoon", "after work"), suggest a concrete time and confirm it. Resolve relative dates (e.g. "tomorrow", "this Friday") to a YYYY-MM-DD value that is today or later. If the date is today, the time MUST be later than the current time (${currentTime}); otherwise politely ask for a later time or another day.
 
 Handling missing items — IMPORTANT:
 - Only move on to STEP 2 once the required STEP 1 items are ALL known: full name, mobile number, valid email, make, model and year.
@@ -373,7 +375,7 @@ const bookingResponseSchema = {
     city: { type: Type.STRING, description: "City / area if given, else empty" },
     emirate: { type: Type.STRING, description: "One of the seven emirates" },
     date: { type: Type.STRING, description: "Preferred date as YYYY-MM-DD, empty if unknown" },
-    slot: { type: Type.STRING, description: "One of the offered time slots, empty if unknown" },
+    slot: { type: Type.STRING, description: "Preferred time as hh:mm AM/PM between 08:00 AM and 08:00 PM, empty if unknown" },
     readyToBook: {
       type: Type.BOOLEAN,
       description: "True only when name, mobile, email, address, emirate, date and slot are all known",

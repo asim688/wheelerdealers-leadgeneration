@@ -182,7 +182,7 @@ export default function CompanyPortal() {
     const res = await fetch(`/api/company/jobs/${id}/accept`, { method: "POST" });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      setNotice("✅ Job accepted! Assign one of your inspectors from My Jobs.");
+      setNotice("✅ Job accepted! Assign one of your inspectors from Jobs Assigned to Inspectors.");
     } else {
       setNotice(data.error || "Could not accept this job.");
     }
@@ -253,8 +253,7 @@ export default function CompanyPortal() {
         <nav className="mt-6 space-y-1 text-sm">
           <SideLink active={tab === "all"} onClick={() => pickTab("all")}>Dashboard</SideLink>
           <SideLink active={tab === "available"} onClick={() => pickTab("available")} badge={pool.length}>Live Jobs</SideLink>
-          <SideLink active={tab === "open"} onClick={() => pickTab("open")} badge={stats.open}>My Jobs</SideLink>
-          <SideLink active={tab === "today"} onClick={() => pickTab("today")} badge={stats.today}>Today</SideLink>
+          <SideLink active={tab === "open"} onClick={() => pickTab("open")} badge={stats.open}>Jobs Assigned to Inspectors</SideLink>
           <SideLink active={tab === "completed"} onClick={() => pickTab("completed")} badge={stats.completed}>Completed</SideLink>
           <SideLink active={tab === "inspectors"} onClick={() => pickTab("inspectors")} badge={inspectors.length}>My Inspectors</SideLink>
           <SideLink active={tab === "payments"} onClick={() => pickTab("payments")}>Payments</SideLink>
@@ -274,7 +273,7 @@ export default function CompanyPortal() {
         <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-neutral-200 bg-white px-4 py-3 sm:px-6">
           <button className="md:hidden" onClick={() => setSidebarOpen(true)} aria-label="Menu">☰</button>
           <h1 className="text-base font-semibold text-neutral-900 sm:text-lg">
-            {tab === "available" ? "Live Jobs" : tab === "inspectors" ? "My Inspectors" : tab === "payments" ? "Payments" : "Dashboard"}
+            {tab === "available" ? "Live Jobs" : tab === "inspectors" ? "My Inspectors" : tab === "payments" ? "Payments" : tab === "open" ? "Jobs Assigned to Inspectors" : tab === "completed" ? "Completed Jobs" : "Dashboard"}
           </h1>
         </header>
 

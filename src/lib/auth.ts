@@ -136,10 +136,21 @@ export function createAdminToken(): string {
   return createSessionToken("admin");
 }
 
-/** True if the request carries a valid admin session cookie. */
+/** Session for a staff login created by an Admin (AdminUser). */
+export function createAdminUserToken(adminUserId: string): string {
+  return createSessionToken(`adminuser:${adminUserId}`);
+}
+
+/** True if the request carries a valid admin session cookie (owner or staff login). */
 export function isAdmin(req: NextRequest): boolean {
-  const token = req.cookies.get(ADMIN_COOKIE)?.value;
-  return verifySessionToken(token) === "admin";
+  const sub = verifySessionToken(req.cookies.get(ADMIN_COOKIE)?.value);
+  return sub === "admin" || (!!sub && sub.startsWith("adminuser:"));
+}
+
+/** The staff AdminUser id behind the session, or null for the owner login / no session. */
+export function getAdminUserId(req: NextRequest): string | null {
+  const sub = verifySessionToken(req.cookies.get(ADMIN_COOKIE)?.value);
+  return sub && sub.startsWith("adminuser:") ? sub.slice("adminuser:".length) : null;
 }
 
 // --- Inspector ---------------------------------------------------------------

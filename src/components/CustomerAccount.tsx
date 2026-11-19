@@ -27,6 +27,10 @@ interface Booking {
   scheduledAt: string | null;
   scheduledSlot: string | null;
   reportToken: string | null;
+  canCancel?: boolean;
+  invoiceAvailable?: boolean;
+  canPay?: boolean;
+  refund?: { status: string; refunded: number } | null;
   createdAt: string;
 }
 
@@ -49,6 +53,23 @@ export default function CustomerAccount() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [showOtp, setShowOtp] = useState(false);
   const [signup, setSignup] = useState(false);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+
+  async function cancelBooking(b: Booking) {
+    const sure = window.confirm(`Cancel booking ${b.jobCode}? No inspection company has accepted it yet, so you will get a full refund of what you paid.`);
+    if (!sure) return;
+    setCancelling(b.id);
+    setNotice("");
+    try {
+      const res = await fetch(`/api/customer/bookings/${b.id}/cancel`, { method: "POST" });
+      const d = await res.json().catch(() => ({}));
+      setNotice(res.ok ? (d.refund ? "Booking cancelled. Your full refund has been requested and will be processed by our team." : "Booking cancelled.") : d.error || "Could not cancel this booking.");
+      await load();
+    } finally {
+      setCancelling(null);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -131,6 +152,8 @@ export default function CustomerAccount() {
               </Link>
             </div>
 
+            {notice && <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{notice}</p>}
+
             {bookings.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-10 text-center">
                 <p className="font-medium text-neutral-800">No bookings yet</p>
@@ -150,6 +173,28 @@ export default function CustomerAccount() {
                         <p className="font-mono text-[11px] text-neutral-400">{b.jobCode}</p>
                       </div>
                       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${stage.cls}`}>{stage.label}</span>
+                      {b.refund?.status === "refund_requested" && <span className="text-xs text-amber-700">Refund requested — we will process it shortly</span>}
+                      {b.refund?.status === "refunded" && <span className="text-xs text-green-700">Refunded</span>}
+                      {b.refund?.status === "partially_refunded" && <span className="text-xs text-green-700">Partly refunded (AED {b.refund.refunded.toFixed(2)})</span>}
+                      {b.canPay && (
+                        <a href={`/inspection/pay/${b.id}`} className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+                          Pay now
+                        </a>
+                      )}
+                      {b.invoiceAvailable && (
+                        <a href={`/api/customer/bookings/${b.id}/invoice`} target="_blank" rel="noreferrer" className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+                          Invoice
+                        </a>
+                      )}
+                      {b.canCancel && (
+                        <button
+                          onClick={() => void cancelBooking(b)}
+                          disabled={cancelling === b.id}
+                          className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {cancelling === b.id ? "Cancelling…" : "Cancel booking"}
+                        </button>
+                      )}
                       {b.status === "completed" && b.reportToken ? (
                         <a href={`/inspection/report/${b.reportToken}`} className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800">
                           View report

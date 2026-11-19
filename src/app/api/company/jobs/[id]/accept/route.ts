@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCompanyId } from "@/lib/auth";
-import { getInspectionPricing, sendEmail } from "@/lib/inspection";
+import { sendEmail } from "@/lib/inspection";
+import { ensureJobPayment, getActiveAgreement, snapshotCommission } from "@/lib/ledger";
+import { computeSplit, type CommissionSetting } from "@/lib/commission";
 import { companyPayoutGaps, PAYOUT_BLOCK_MESSAGE } from "@/lib/companyCompliance";
 
 export const runtime = "nodejs";
@@ -65,7 +67,24 @@ export async function POST(
     );
   }
 
-  const { partnerPayout } = await getInspectionPricing();
+  // No commission set for this company yet → it cannot take jobs (set by Admin / Account Manager).
+  const agreement = await getActiveAgreement(company.id);
+  if (!agreement) {
+    return NextResponse.json(
+      { error: "Wheeler Dealers has not set your commission yet. Please contact us so we can activate your account for jobs.", commissionMissing: true },
+      { status: 403 },
+    );
+  }
+  const payment = await ensureJobPayment(id);
+  if (!payment) {
+    return NextResponse.json({ error: "This job has no confirmed payment." }, { status: 409 });
+  }
+  const split = computeSplit(payment.grossFils, { type: agreement.type as CommissionSetting["type"], value: agreement.value });
+  if (!split.ok) {
+    return NextResponse.json({ error: "Your commission setting is not valid for this job. Please contact Wheeler Dealers." }, { status: 409 });
+  }
+  // Legacy whole-AED figure kept for the older dashboards; the exact amount lives in the ledger.
+  const partnerPayout = Math.round(split.split.partnerFils / 100);
   const now = new Date();
 
   // Atomic claim: succeeds only while the job is still in the pool.
@@ -84,6 +103,8 @@ export async function POST(
       { status: 409 },
     );
   }
+
+  await snapshotCommission(id, company.id);
 
   const job = await prisma.inspectionJob.findUnique({ where: { id } });
 

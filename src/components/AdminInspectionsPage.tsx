@@ -5,6 +5,8 @@ import Link from "next/link";
 import BrandLogo from "./BrandLogo";
 import AdminInspectionsPanel, { AccountManagersPanel, STATUS_TABS } from "./AdminInspectionsPanel";
 import AdminCompaniesList from "./AdminCompaniesList";
+import AdminPaymentsPanel from "./AdminPaymentsPanel";
+import AdminUsersPanel from "./AdminUsersPanel";
 import { LoginForm } from "./AdminDashboard";
 
 /**
@@ -14,7 +16,7 @@ import { LoginForm } from "./AdminDashboard";
  * The old summary cards and status chips at the top are gone.
  */
 
-export type Section = "jobs" | "companies" | "managers";
+export type Section = "jobs" | "companies" | "managers" | "payments" | "users";
 
 export default function AdminInspectionsPage({ initialSection = "jobs" }: { initialSection?: Section }) {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -109,9 +111,11 @@ export default function AdminInspectionsPage({ initialSection = "jobs" }: { init
           <NavItem active={section === "managers"} onClick={() => go("managers")}>
             3. Account Managers
           </NavItem>
-          <NavItem disabled>
-            <span>4. Payment Management</span>
-            <span className="ml-2 rounded-full bg-neutral-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-neutral-500">Soon</span>
+          <NavItem active={section === "payments"} onClick={() => go("payments")}>
+            4. Payment Management
+          </NavItem>
+          <NavItem active={section === "users"} onClick={() => go("users")}>
+            5. User Management
           </NavItem>
         </nav>
       </aside>
@@ -145,6 +149,13 @@ export default function AdminInspectionsPage({ initialSection = "jobs" }: { init
           )}
           {section === "companies" && <AdminCompaniesList onUnauthorized={onUnauthorized} />}
           {section === "managers" && <AccountManagersPanel onChanged={() => undefined} onUnauthorized={onUnauthorized} />}
+          {section === "payments" && (
+            <>
+              <h1 className="mb-3 text-lg font-semibold text-neutral-900">Payment Management</h1>
+              <AdminPaymentsPanel onUnauthorized={onUnauthorized} />
+            </>
+          )}
+          {section === "users" && <AdminUsersPanel onUnauthorized={onUnauthorized} />}
         </main>
       </div>
     </div>

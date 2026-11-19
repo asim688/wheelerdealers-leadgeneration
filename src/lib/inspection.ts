@@ -1,4 +1,6 @@
 import { prisma } from "./prisma";
+import { ensureJobPayment } from "./ledger";
+import { emailInvoice } from "./invoice";
 
 /**
  * ----------------------------------------------------------------------------
@@ -137,7 +139,13 @@ export function isTestEmailAddress(to: string): boolean {
 }
 
 /** Sends an email via Resend if configured, else logs. Returns true if sent. */
-export async function sendEmail(to: string, subject: string, html: string, text?: string): Promise<boolean> {
+export async function sendEmail(
+  to: string,
+  subject: string,
+  html: string,
+  text?: string,
+  attachments?: { filename: string; content: string }[], // content is base64
+): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM || "The Wheeler Dealers <onboarding@resend.dev>";
   if (!key || (process.env.NODE_ENV !== "production" && isTestEmailAddress(to))) {
@@ -148,7 +156,7 @@ export async function sendEmail(to: string, subject: string, html: string, text?
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to, subject, html, ...(text ? { text } : {}) }),
+      body: JSON.stringify({ from, to, subject, html, ...(text ? { text } : {}), ...(attachments?.length ? { attachments } : {}) }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) console.error("Resend email failed:", res.status, (await res.text().catch(() => "")).slice(0, 200));
@@ -194,13 +202,14 @@ export async function sendSms(to: string, body: string, whatsapp = false): Promi
 
 /**
  * Atomically marks a paid job as released to the marketplace and fires the
- * customer + company notifications. Safe to call from BOTH the Stripe webhook
- * and the checkout-return page at the same time: the conditional update lets
+ * customer + company notifications. Safe to call from BOTH the provider webhook
+ * (Stripe or Tamara) and the checkout-return page at the same time: the conditional update lets
  * exactly one caller win, so notifications can never double-fire.
  */
 export async function releasePaidJob(
   jobId: string,
   paymentRef?: string,
+  provider: "stripe" | "tamara" = "stripe",
 ): Promise<boolean> {
   const openHours = await getJobOpenHours();
   const updated = await prisma.inspectionJob.updateMany({
@@ -208,19 +217,21 @@ export async function releasePaidJob(
     data: {
       status: "available",
       paymentStatus: "paid",
-      paymentProvider: "stripe",
+      paymentProvider: provider,
       paymentRef: paymentRef ?? undefined,
       paidAt: new Date(),
       expiresAt: new Date(Date.now() + openHours * 3_600_000),
     },
   });
   if (updated.count === 0) return false; // someone else already released it
+  await ensureJobPayment(jobId).catch((e) => console.error("ledger: ensureJobPayment failed", e));
 
   const job = await prisma.inspectionJob.findUnique({ where: { id: jobId } });
   if (job) {
     await Promise.allSettled([
       sendBookingNotifications(job),
       notifyCompaniesNewJob(job),
+      emailInvoice(jobId),
     ]);
   }
   return true;

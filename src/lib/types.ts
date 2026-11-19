@@ -510,7 +510,7 @@ export interface InspectionBookingResult {
   currency: string;
   scheduledAt: string | null;
   scheduledSlot: string | null;
-  /** Hosted payment page (Stripe Checkout) when online payment is enabled. */
+  /** Our payment page (card via Stripe, or Tamara instalments) when online payment is enabled. */
   payUrl?: string | null;
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/auth";
+import { getAdminIdentity } from "@/lib/adminIdentity";
 import { missingDocs, payoutGaps, sendCompanyWelcomeEmail } from "@/lib/companyCompliance";
 import {
   ASSIGNED_STATUSES,
@@ -181,13 +182,13 @@ export async function PATCH(
 
   const verifierName = (body.verifierName ?? "").trim().slice(0, 80);
   const firstApproval = data.approvalStatus === "approved" && existing.approvalStatus === "pending";
-  if (firstApproval && verifierName.length < 2) {
+  if (firstApproval && verifierName.length < 2 && !(await getAdminIdentity(req))?.staff) {
     return NextResponse.json(
       { error: "Enter the name of the person verifying this registration." },
       { status: 400 },
     );
   }
-  const actor = adminActor(req, verifierName);
+  const actor = await adminActor(req, verifierName);
   const note = typeof body.note === "string" ? body.note.trim() : "";
 
   const update: Prisma.InspectionCompanyUpdateInput = { ...data };

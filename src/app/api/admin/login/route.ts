@@ -4,11 +4,14 @@ import {
   getAdminPassword,
   getAdminEmail,
   createAdminToken,
+  createAdminUserToken,
+  verifyPassword,
   ADMIN_COOKIE,
   sessionCookieOptions,
   SESSION_MAX_AGE,
 } from "@/lib/auth";
 import { rateLimitRequest } from "@/lib/rateLimit";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
@@ -44,6 +47,17 @@ export async function POST(req: NextRequest) {
   // checked. When provided it must match the configured admin email.
   const emailOk = email === "" || safeEqual(email, getAdminEmail());
   const passOk = safeEqual(password, getAdminPassword());
+
+  // Named staff login (created by an Admin) — checked when it isn't the owner login.
+  if (!(emailOk && passOk) && email) {
+    const staff = await prisma.adminUser.findUnique({ where: { email } });
+    if (staff && staff.active && verifyPassword(password, staff.passwordHash)) {
+      await prisma.adminUser.update({ where: { id: staff.id }, data: { lastLoginAt: new Date() } });
+      const res = NextResponse.json({ ok: true });
+      res.cookies.set(ADMIN_COOKIE, createAdminUserToken(staff.id), sessionCookieOptions(SESSION_MAX_AGE));
+      return res;
+    }
+  }
 
   if (!emailOk || !passOk) {
     return NextResponse.json(

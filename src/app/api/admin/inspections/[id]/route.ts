@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/auth";
-import { getInspectionPricing, getJobOpenHours, notifyCompaniesNewJob } from "@/lib/inspection";
+import { getJobOpenHours, notifyCompaniesNewJob } from "@/lib/inspection";
+import { getAdminIdentity } from "@/lib/adminIdentity";
+import { resetSnapshot, snapshotCommission } from "@/lib/ledger";
 import { approveReport } from "@/lib/review";
 import type { Prisma } from "@prisma/client";
 
@@ -78,6 +80,7 @@ export async function PATCH(
     data.assignedAt = null;
     data.startedAt = null;
     data.partnerPayout = null;
+    await resetSnapshot(id, "Job renewed by admin");
     if (job.assignedInspectorId) data.inspector = { disconnect: true };
     if (job.acceptedByCompanyId) data.acceptedByCompany = { disconnect: true };
   }
@@ -89,9 +92,12 @@ export async function PATCH(
       data.inspector = { disconnect: true };
       data.assignedAt = null;
       // Return the job to the marketplace pool unless it's further along.
-      if (["assigned", "accepted"].includes(job.status)) data.status = "available";
+      if (["assigned", "accepted"].includes(job.status)) {
+        data.status = "available";
+        await resetSnapshot(id, "Admin unassigned the job");
+      }
     } else {
-      const inspector = await prisma.inspector.findUnique({ where: { id: inspId }, select: { id: true } });
+      const inspector = await prisma.inspector.findUnique({ where: { id: inspId }, select: { id: true, companyId: true } });
       if (!inspector) {
         return NextResponse.json({ error: "Inspection company not found." }, { status: 400 });
       }
@@ -101,10 +107,14 @@ export async function PATCH(
         data.status = "accepted";
         data.acceptedAt = new Date();
       }
-      // Snapshot the payout if the marketplace accept didn't set one.
-      if (job.partnerPayout == null) {
-        const { partnerPayout } = await getInspectionPricing();
-        data.partnerPayout = partnerPayout;
+      // Lock the company's commission if the marketplace accept didn't already.
+      if (job.partnerPayout == null && inspector.companyId) {
+        const snap = await snapshotCommission(id, inspector.companyId);
+        if (!snap.ok) {
+          return NextResponse.json({ error: snap.error }, { status: 409 });
+        }
+        const pay = await prisma.jobPayment.findUnique({ where: { jobId: id }, select: { partnerFils: true } });
+        if (pay?.partnerFils != null) data.partnerPayout = Math.round(pay.partnerFils / 100);
       }
     }
   }
@@ -114,7 +124,8 @@ export async function PATCH(
     if (body.renew || body.assignedInspectorId !== undefined) {
       return NextResponse.json({ error: "Verify the report on its own request." }, { status: 400 });
     }
-    const result = await approveReport({ type: "admin", id: "admin", name: "Super Admin" }, id);
+    const who = await getAdminIdentity(req);
+    const result = await approveReport({ type: "admin", id: who?.id ?? "admin", name: who?.name ?? "Super Admin" }, id);
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
     return NextResponse.json({ ok: true, job: { id, status: "completed" } });
   }

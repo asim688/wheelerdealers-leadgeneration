@@ -35,3 +35,10 @@ prisma/dev.db-journal
 # Dev-only inspection photo uploads (production uses Vercel Blob)
 /public/uploads
 public/uploads/_preview/
+
+# Client documents / recordings (never commit)
+nov-19/
+client-new-message-oct-25/
+*.docx
+*.ogg
+/*.pdf

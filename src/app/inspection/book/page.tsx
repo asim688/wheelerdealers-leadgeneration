@@ -4,6 +4,7 @@ import InspectionBooking from "@/components/InspectionBooking";
 import { absoluteUrl } from "@/lib/seo";
 import { prisma } from "@/lib/prisma";
 import { retrieveCheckoutSession } from "@/lib/payments";
+import { settleTamaraOrder } from "@/lib/tamara";
 import { releasePaidJob } from "@/lib/inspection";
 
 export const metadata: Metadata = {
@@ -29,16 +30,19 @@ export const metadata: Metadata = {
 export default async function InspectionBookPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string; paid?: string; cancelled?: string; job?: string; session_id?: string }>;
+  searchParams: Promise<{ mode?: string; paid?: string; cancelled?: string; job?: string; session_id?: string; provider?: string; orderId?: string }>;
 }) {
-  const { mode, paid, cancelled, job, session_id } = await searchParams;
+  const { mode, paid, cancelled, job, session_id, provider, orderId } = await searchParams;
 
   // Back from Stripe Checkout: show a payment result screen instead of a
   // fresh booking. Status is read from the DB (webhook-driven), not the URL.
   if ((paid === "1" || cancelled === "1") && job) {
     let record = await prisma.inspectionJob.findUnique({
       where: { jobCode: job },
-      select: { id: true, jobCode: true, paymentStatus: true, customerEmail: true },
+      select: {
+        id: true, jobCode: true, paymentStatus: true, paymentRef: true, fee: true, currency: true,
+        customerName: true, customerEmail: true, customerMobile: true, address: true, city: true, emirate: true, make: true, model: true, year: true,
+      },
     });
 
     // Webhook race fallback: the customer often lands here before Stripe's
@@ -53,16 +57,28 @@ export default async function InspectionBookPage({
       }
     }
 
+    // Same race for Tamara: verify the order server-side (authorise + capture), then release.
+    if (record && paid === "1" && record.paymentStatus === "pending" && provider === "tamara" && record.fee != null) {
+      const tamaraOrderId = orderId || record.paymentRef;
+      if (tamaraOrderId && tamaraOrderId === record.paymentRef) {
+        const status = await settleTamaraOrder(tamaraOrderId, { ...record, fee: record.fee });
+        if (status) {
+          await releasePaidJob(record.id, tamaraOrderId, "tamara");
+          record = { ...record, paymentStatus: "paid" };
+        }
+      }
+    }
+
     if (record) {
       const isPaid = record.paymentStatus === "paid" || record.paymentStatus === "waived";
-      return <PaymentResult paid={isPaid} jobCode={record.jobCode} email={record.customerEmail} />;
+      return <PaymentResult paid={isPaid} jobId={record.id} jobCode={record.jobCode} email={record.customerEmail} provider={provider} />;
     }
   }
 
   return <InspectionBooking initialMode={mode === "form" ? "form" : "chat"} />;
 }
 
-function PaymentResult({ paid, jobCode, email }: { paid: boolean; jobCode: string; email: string }) {
+function PaymentResult({ paid, jobId, jobCode, email, provider }: { paid: boolean; jobId: string; jobCode: string; email: string; provider?: string }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-5">
       <div className="mx-auto w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-8 text-center shadow-sm">
@@ -74,7 +90,9 @@ function PaymentResult({ paid, jobCode, email }: { paid: boolean; jobCode: strin
               </svg>
             </div>
             <h1 className="text-xl font-bold text-neutral-900">Payment Successful!</h1>
-            <p className="mt-1 text-sm text-neutral-600">Your inspection is booked and confirmed.</p>
+            <p className="mt-1 text-sm text-neutral-600">
+              {provider === "tamara" ? "Paid with Tamara. Your inspection is booked and confirmed." : "Your inspection is booked and confirmed."}
+            </p>
             <div className="mt-5 rounded-xl bg-neutral-50 p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Your Job ID</p>
               <p className="mt-1 text-2xl font-bold tracking-wider text-red-700">{jobCode}</p>
@@ -109,7 +127,7 @@ function PaymentResult({ paid, jobCode, email }: { paid: boolean; jobCode: strin
             Done
           </Link>
           <Link
-            href="/inspection/book"
+            href={paid ? "/inspection/book" : `/inspection/pay/${jobId}`}
             className="flex-1 rounded-md bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700"
           >
             {paid ? "Book another" : "Try again"}

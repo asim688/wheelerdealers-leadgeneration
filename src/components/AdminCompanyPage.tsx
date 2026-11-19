@@ -7,6 +7,7 @@ import { LoginForm } from "./AdminDashboard";
 import { CompanyActionButtons, CompanyDetails, fmtDateTime, type AdminCompany, type CompanyActivityEvent } from "./adminCompanyShared";
 import { StatusBadges } from "./AdminCompaniesList";
 import type { AdminInspectionJob } from "@/lib/types";
+import CommissionPanel from "./CommissionPanel";
 
 /**
  * One company's own page (Super Admin). Left menu:
@@ -36,7 +37,7 @@ interface CompanyPayload {
   activity: CompanyActivityEvent[];
 }
 
-type View = "all" | "assigned" | "completed" | "details" | "inspectors";
+type View = "all" | "assigned" | "completed" | "details" | "inspectors" | "commission";
 
 const JOB_VIEWS: Record<"all" | "assigned" | "completed", { label: string; status: string }> = {
   all: { label: "All", status: "" },
@@ -165,6 +166,7 @@ export default function AdminCompanyPage({ companyId }: { companyId: string }) {
           <div className="my-3 border-t border-neutral-100" />
           <SideItem active={view === "details"} onClick={() => pick("details")}>Company details</SideItem>
           <SideItem active={view === "inspectors"} onClick={() => pick("inspectors")} count={inspectors.length}>Inspectors</SideItem>
+          <SideItem active={view === "commission"} onClick={() => pick("commission")}>Commission</SideItem>
         </nav>
 
         <div className="border-t border-neutral-100 p-3">
@@ -197,6 +199,12 @@ export default function AdminCompanyPage({ companyId }: { companyId: string }) {
 
           {view === "details" && <CompanyDetails company={c} activity={data.activity} />}
           {view === "inspectors" && <InspectorsTable inspectors={inspectors} />}
+          {view === "commission" && (
+            <div className="max-w-2xl">
+              <h2 className="mb-3 text-lg font-semibold text-neutral-900">Commission</h2>
+              <CommissionPanel companyId={companyId} as="admin" onUnauthorized={() => setAuthed(false)} />
+            </div>
+          )}
           {(view === "all" || view === "assigned" || view === "completed") && (
             <CompanyJobs key={view} companyId={companyId} view={view} onUnauthorized={() => setAuthed(false)} />
           )}

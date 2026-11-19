@@ -6,14 +6,19 @@ import {
   getInspectionPricing,
   getJobOpenHours,
   generateJobCode,
+  getBaseUrl,
   sendBookingNotifications,
   notifyCompaniesNewJob,
 } from "@/lib/inspection";
-import { isStripeConfigured, createCheckoutSession } from "@/lib/payments";
+import { isStripeConfigured } from "@/lib/payments";
 import { getCustomerId } from "@/lib/auth";
 import { normaliseEmail } from "@/lib/contactValidation";
 import { normaliseMobile } from "@/lib/phone";
 import type { InspectionBookingInput, InspectionBookingResult } from "@/lib/types";
+import { ensureJobPayment } from "@/lib/ledger";
+import { isTamaraConfigured } from "@/lib/tamara";
+import { bookingInstant, validateBookingTime } from "@/lib/bookingTime";
+import { emailInvoice } from "@/lib/invoice";
 
 // Prisma requires the Node.js runtime (not Edge).
 export const runtime = "nodejs";
@@ -63,7 +68,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const scheduledAt = toDate(body.date, body.slot);
+  // Date + time are required and must be 08:00–20:00 Dubai time, not already past.
+  const timing = validateBookingTime(clean(body.date) ?? "", clean(body.slot) ?? "");
+  if (!timing.ok) return NextResponse.json({ error: timing.error }, { status: 400 });
+  const scheduledAt = bookingInstant(clean(body.date)!, timing.minutes);
+  const scheduledSlot = timing.label;
 
   // Customer login gate: booking requires an authenticated customer session
   // (mobile OTP). Can be disabled with REQUIRE_CUSTOMER_LOGIN=false for dev.
@@ -133,30 +142,18 @@ export async function POST(req: NextRequest) {
         lat: toNum(body.lat),
         lng: toNum(body.lng),
         scheduledAt,
-        scheduledSlot: clean(body.slot) || null,
+        scheduledSlot,
         fee: customerPrice,
         currency: INSPECTION_CURRENCY,
         customerId: customerId ?? null,
       },
     });
 
-    // --- Payment: Stripe Checkout when configured, dev auto-approval otherwise.
+    // --- Payment: when any gateway is configured, send the customer to our payment
+    // page (card via Stripe, or instalments via Tamara). Dev auto-approval otherwise.
     let payUrl: string | null = null;
-    if (isStripeConfigured()) {
-      const session = await createCheckoutSession({
-        id: job.id,
-        jobCode: job.jobCode,
-        fee: job.fee ?? customerPrice,
-        currency: job.currency,
-        customerEmail: job.customerEmail,
-      });
-      if (session) {
-        payUrl = session.url;
-        await prisma.inspectionJob.update({
-          where: { id: job.id },
-          data: { paymentProvider: "stripe", paymentRef: session.sessionId },
-        });
-      }
+    if (isStripeConfigured() || isTamaraConfigured()) {
+      payUrl = `${getBaseUrl()}/inspection/pay/${job.id}`;
     }
     if (!payUrl) {
       // No gateway configured (or session failed): auto-approve so the
@@ -172,9 +169,11 @@ export async function POST(req: NextRequest) {
           expiresAt: new Date(Date.now() + openHours * 3_600_000),
         },
       });
+      await ensureJobPayment(job.id).catch((e) => console.error("ledger: ensureJobPayment failed", e));
       await Promise.allSettled([
         sendBookingNotifications(job),
         notifyCompaniesNewJob(job),
+        emailInvoice(job.id),
       ]);
     }
 
@@ -214,19 +213,3 @@ function toNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Combines an ISO date (YYYY-MM-DD) and a slot label into a Date, if valid. */
-function toDate(date?: unknown, slot?: unknown): Date | null {
-  const d = (date ?? "").toString().trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
-  const parsed = new Date(`${d}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  // Best-effort: fold the slot's hour into the timestamp for ordering.
-  const s = (slot ?? "").toString().trim();
-  const m = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
-  if (m) {
-    let hr = Number(m[1]) % 12;
-    if (/pm/i.test(m[3] ?? "")) hr += 12;
-    parsed.setHours(hr, Number(m[2]));
-  }
-  return parsed;
-}

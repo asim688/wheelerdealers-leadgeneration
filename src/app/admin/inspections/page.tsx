@@ -7,6 +7,6 @@ export const metadata = {
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ section?: string }> }) {
   const { section } = await searchParams;
-  const initial: Section = section === "companies" || section === "managers" ? section : "jobs";
+  const initial: Section = section === "staff" ? "users" : ["companies", "managers", "payments", "users"].includes(section ?? "") ? (section as Section) : "jobs";
   return <AdminInspectionsPage initialSection={initial} />;
 }

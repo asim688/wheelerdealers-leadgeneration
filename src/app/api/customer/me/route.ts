@@ -32,6 +32,8 @@ export async function GET(req: NextRequest) {
       scheduledAt: true,
       scheduledSlot: true,
       reportToken: true,
+      paymentStatus: true,
+      payment: { select: { paymentStatus: true, refundedFils: true } },
       createdAt: true,
     },
   });
@@ -46,6 +48,10 @@ export async function GET(req: NextRequest) {
       scheduledAt: j.scheduledAt ? j.scheduledAt.toISOString() : null,
       scheduledSlot: j.scheduledSlot,
       reportToken: j.status === "completed" ? j.reportToken : null,
+      invoiceAvailable: j.paymentStatus === "paid",
+      canPay: j.status === "payment_pending" && j.paymentStatus === "pending",
+      canCancel: ["payment_pending", "available"].includes(j.status),
+      refund: j.payment ? { status: j.payment.paymentStatus, refunded: j.payment.refundedFils / 100 } : null,
       createdAt: j.createdAt.toISOString(),
     })),
   });

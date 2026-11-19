@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCompanyId } from "@/lib/auth";
 import { getJobOpenHours, notifyCompaniesNewJob } from "@/lib/inspection";
+import { resetSnapshot } from "@/lib/ledger";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,8 @@ export async function POST(
       expiresAt: new Date(Date.now() + openHours * 3_600_000),
     },
   });
+
+  await resetSnapshot(id, "Company cancelled; job returned to the live pool");
 
   // Broadcast to all companies again (the canceller is filtered out of the
   // pool by the exclusion list, so the alert is harmless for them).

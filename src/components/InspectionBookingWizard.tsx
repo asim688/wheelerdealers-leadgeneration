@@ -8,6 +8,7 @@ import CustomerEmailVerifyModal from "./CustomerEmailVerifyModal";
 import BookingModeSwitch from "./BookingModeSwitch";
 import LocationPicker from "./LocationPicker";
 import { useInspectionFee } from "./useInspectionFee";
+import { BOOKING_CLOSE_MINUTES, BOOKING_OPEN_MINUTES, dubaiNow, formatTimeLabel, parseTimeLabel, toInputTime, validateBookingTime } from "@/lib/bookingTime";
 import type {
   InspectionBookingResult,
   SelectedLocation,
@@ -27,7 +28,6 @@ const STEPS = [
   "Confirm",
 ] as const;
 
-const SLOTS = ["09:00 AM", "11:00 AM", "01:00 PM", "03:00 PM", "05:00 PM"];
 const EMIRATES = [
   "Dubai",
   "Abu Dhabi",
@@ -97,7 +97,7 @@ export default function InspectionBookingWizard({
   const [showOtp, setShowOtp] = useState(false);
   const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dubaiNow().date;
 
   // --- validation per step ------------------------------------------------
   function stepValid(s: number): boolean {
@@ -115,8 +115,7 @@ export default function InspectionBookingWizard({
         return (
           location.address.trim().length > 3 &&
           location.emirate.trim().length > 0 &&
-          schedule.date.trim().length > 0 &&
-          schedule.slot.trim().length > 0
+          validateBookingTime(schedule.date, schedule.slot).ok
         );
       default:
         return true;
@@ -199,7 +198,7 @@ export default function InspectionBookingWizard({
           lat: location.lat,
           lng: location.lng,
           date: schedule.date || undefined,
-          slot: schedule.slot || undefined,
+          slot: schedule.slot ? formatTimeLabel(parseTimeLabel(schedule.slot) ?? 0) : undefined,
         }),
       });
       const data = await res.json();
@@ -575,6 +574,7 @@ function matchEmirate(raw?: string): string {
 }
 
 function ScheduleStep({ value, onChange, minDate }: { value: Schedule; onChange: (v: Schedule) => void; minDate: string }) {
+  const check = value.date && value.slot ? validateBookingTime(value.date, value.slot) : null;
   return (
     <div className="space-y-5">
       <Field label="Preferred Date" required>
@@ -586,27 +586,20 @@ function ScheduleStep({ value, onChange, minDate }: { value: Schedule; onChange:
           className={inputCls}
         />
       </Field>
-      <div>
-        <p className="mb-2 text-sm font-medium text-neutral-700">
-          Preferred Time <span className="text-red-500">*</span>
+      <Field label="Preferred Time" required>
+        <input
+          type="time"
+          min={toInputTime(BOOKING_OPEN_MINUTES)}
+          max={toInputTime(BOOKING_CLOSE_MINUTES)}
+          step={900}
+          value={value.slot}
+          onChange={(e) => onChange({ ...value, slot: e.target.value })}
+          className={inputCls}
+        />
+        <p className={`mt-1.5 text-xs ${check && !check.ok ? "text-red-600" : "text-neutral-500"}`}>
+          {check && !check.ok ? check.error : "Any time between 08:00 AM and 08:00 PM."}
         </p>
-        <div className="flex flex-wrap gap-2">
-          {SLOTS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onChange({ ...value, slot: s })}
-              className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
-                value.slot === s
-                  ? "border-red-600 bg-red-50 text-red-700"
-                  : "border-neutral-300 text-neutral-700 hover:border-red-400"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
+      </Field>
     </div>
   );
 }
@@ -627,7 +620,8 @@ function ReviewStep({
   fee: string;
 }) {
   const car = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "—";
-  const when = schedule.date ? `${schedule.date} · ${schedule.slot || ""}`.trim() : "—";
+  const slotMinutes = parseTimeLabel(schedule.slot);
+  const when = schedule.date ? `${schedule.date} · ${slotMinutes == null ? "" : formatTimeLabel(slotMinutes)}`.trim() : "—";
   const place = [location.address, location.city, location.emirate].filter(Boolean).join(", ") || "—";
   return (
     <dl className="divide-y divide-neutral-100">

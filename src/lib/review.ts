@@ -5,6 +5,8 @@ import { getManagerId, isAdmin, getAdminEmail } from "./auth";
 import { getBaseUrl, sendEmail, sendReportNotification } from "./inspection";
 import { brandEmail, esc } from "./emailTemplates";
 import { itemType, optionsFor, VALUE_KEYS } from "./inspectionChecklist";
+import { markReportDelivered } from "@/lib/ledger";
+import { getAdminIdentity } from "@/lib/adminIdentity";
 
 /**
  * ----------------------------------------------------------------------------
@@ -19,7 +21,7 @@ import { itemType, optionsFor, VALUE_KEYS } from "./inspectionChecklist";
  */
 
 export type Reviewer =
-  | { type: "admin"; id: "admin"; name: string }
+  | { type: "admin"; id: string; name: string }
   | { type: "manager"; id: string; name: string };
 
 /**
@@ -30,7 +32,10 @@ export type Reviewer =
  */
 export async function getReviewer(req: NextRequest): Promise<Reviewer | null> {
   const as = req.headers.get("x-review-as");
-  if (as !== "manager" && isAdmin(req)) return { type: "admin", id: "admin", name: "Super Admin" };
+  if (as !== "manager" && isAdmin(req)) {
+    const who = await getAdminIdentity(req);
+    if (who) return { type: "admin", id: who.id, name: who.name };
+  }
   if (as === "admin") return null;
   const managerId = getManagerId(req);
   if (!managerId) return null;
@@ -174,6 +179,8 @@ export async function approveReport(reviewer: Reviewer, jobId: string): Promise<
       }),
       prisma.inspectionReport.update({ where: { jobId }, data: { sentAt: new Date() } }),
     ]);
+    // Report is with the customer: the company's payout becomes due after the review window.
+    await markReportDelivered(jobId, new Date()).catch((e) => console.error("ledger: markReportDelivered failed", e));
   }
   return { ok: true };
 }

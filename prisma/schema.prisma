@@ -253,6 +253,7 @@ model InspectionCompany {
   jobs       InspectionJob[] @relation("CompanyJobs")
   documents  CompanyDocument[]
   activity   CompanyActivity[]
+  agreements CommissionAgreement[]
 
   @@index([approvalStatus])
   @@index([accountManagerId])
@@ -495,6 +496,8 @@ model InspectionJob {
   photos   InspectionPhoto[]
   report   InspectionReport?
   activity ReportActivity[]
+  payment  JobPayment?
+  invoice  TaxInvoice?
 
   @@index([status])
   @@index([assignedInspectorId])
@@ -579,3 +582,133 @@ model InspectionReport {
   sentAt          DateTime?
 }
 
+
+// ── Payment Management (Phase 1) ─────────────────────────────────────────────
+// All money below is stored as integer fils (1 AED = 100 fils); never floats.
+
+/// A company's commission agreement. Every change is a new row (the previous
+/// active row becomes "superseded"), so the table itself is the change history.
+model CommissionAgreement {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        InspectionCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type           String   // percentage | fixed
+  /// percentage → basis points (1500 = 15.00%); fixed → fils (5000 = AED 50.00)
+  value          Int
+  status         String   @default("active") // active | superseded
+  previousType   String?
+  previousValue  Int?
+  note           String?
+  createdById    String?
+  createdByName  String?
+  createdByRole  String?  // admin | account_manager
+  createdAt      DateTime @default(now())
+
+  @@index([companyId, createdAt])
+}
+
+/// One row per paid inspection job: the money split and the partner payout state.
+/// The commission fields are an immutable snapshot taken when a company accepts.
+model JobPayment {
+  id        String   @id @default(cuid())
+  jobId     String   @unique
+  job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  companyId String?
+  currency  String   @default("AED")
+
+  grossFils Int      // what the customer paid, VAT included
+  vatFils   Int      // 5% VAT contained in the gross amount
+  netFils   Int      // gross - VAT
+
+  agreementId     String?
+  commissionType  String?  // snapshot: percentage | fixed
+  commissionValue Int?     // snapshot: bp or fils
+  commissionFils  Int?     // WD commission (excl. VAT)
+  partnerFils     Int?     // paid to the inspection company
+  snapshotAt      DateTime?
+
+  paymentStatus String   @default("received") // received | refund_requested | partially_refunded | refunded
+  refundedFils  Int      @default(0)
+
+  // not_eligible → pending → (due, derived once eligibleAt passes) → paid; on_hold by Admin
+  payoutStatus  String    @default("not_eligible")
+  eligibleAt    DateTime? // report delivered + 3 hours
+  paidAt        DateTime?
+  payoutRef     String?   // bank transfer reference
+  paidByName    String?
+  holdReason    String?
+  heldByName    String?
+  heldAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events    PaymentEvent[]
+
+  @@index([companyId, payoutStatus])
+  @@index([payoutStatus, eligibleAt])
+}
+
+/// Immutable audit trail of everything that happens to a payment.
+model PaymentEvent {
+  id         String   @id @default(cuid())
+  paymentId  String
+  payment    JobPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  type       String   // created | snapshot | eligible | hold | release | paid | refund_requested | refund
+  actorName  String?
+  actorRole  String?  // admin | account_manager | system | customer
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@index([paymentId, createdAt])
+}
+
+/// Staff login for the Super Admin side (created by an Admin).
+model AdminUser {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  active       Boolean  @default(true)
+  createdByName String?
+  createdAt    DateTime @default(now())
+  lastLoginAt  DateTime?
+}
+
+/// Refund of a customer payment. Admin only; full = the amount collected, or a manual partial amount.
+model PaymentRefund {
+  id          String   @id @default(cuid())
+  paymentId   String
+  amountFils  Int
+  kind        String   // full | partial
+  reason      String?
+  status      String   @default("requested") // requested | done | rejected
+  reference   String?  // Stripe refund id / note
+  requestedBy String?  // customer | admin name
+  processedByName String?
+  createdAt   DateTime @default(now())
+  processedAt DateTime?
+
+  @@index([paymentId])
+}
+
+/// UAE tax invoice issued to the customer when their payment is received.
+/// The invoice number is derived from `seq` (gapless per successful insert).
+model TaxInvoice {
+  id            String   @id @default(cuid())
+  seq           Int      @unique @default(autoincrement())
+  token         String   @unique @default(cuid()) // unguessable public download link
+  jobId         String   @unique
+  job           InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  issuedAt      DateTime @default(now())
+  supplyDate    DateTime // date the payment was received / service supplied
+  customerName  String
+  customerEmail String
+  description   String
+  currency      String   @default("AED")
+  grossFils     Int
+  vatFils       Int
+  netFils       Int
+  emailedAt     DateTime?
+  createdAt     DateTime @default(now())
+}

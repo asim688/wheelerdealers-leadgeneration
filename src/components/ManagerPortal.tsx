@@ -5,6 +5,7 @@ import Link from "next/link";
 import BrandLogo from "./BrandLogo";
 import VerifyField from "./VerifyField";
 import ReportReview from "./ReportReview";
+import CommissionPanel from "./CommissionPanel";
 import { normaliseEmail, normaliseUaeMobile, verificationKey } from "@/lib/contactValidation";
 
 /**
@@ -191,6 +192,7 @@ function ManagerDashboard({ manager, companies, onLogout }: { manager: Manager; 
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [openJob, setOpenJob] = useState<string | null>(null);
+  const [commissionFor, setCommissionFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -233,11 +235,26 @@ function ManagerDashboard({ manager, companies, onLogout }: { manager: Manager; 
           {companies.length === 0 ? (
             <p className="mt-1 text-sm text-amber-700">No companies assigned yet — ask the super admin to assign companies to you.</p>
           ) : (
-            <div className="mt-2 flex flex-wrap gap-2">
+            <ul className="mt-2 divide-y divide-neutral-100">
               {companies.map((c) => (
-                <span key={c.id} className="rounded-full bg-neutral-100 px-3 py-1 text-sm font-medium text-neutral-800">{c.name}</span>
+                <li key={c.id} className="py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-neutral-800">{c.name}</span>
+                    <button
+                      onClick={() => setCommissionFor((cur) => (cur === c.id ? null : c.id))}
+                      className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                    >
+                      {commissionFor === c.id ? "Close" : "Commission"}
+                    </button>
+                  </div>
+                  {commissionFor === c.id && (
+                    <div className="mt-3">
+                      <CommissionPanel companyId={c.id} as="manager" onUnauthorized={onLogout} />
+                    </div>
+                  )}
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
 

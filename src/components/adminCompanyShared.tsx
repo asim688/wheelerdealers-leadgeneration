@@ -328,6 +328,14 @@ export function CompanyActionButtons({
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [staffName, setStaffName] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/admin/me").then(async (r) => {
+      const d = r.ok ? await r.json() : null;
+      setStaffName(d?.staff ? d.name : null);
+    });
+  }, []);
 
   useEffect(() => {
     if (decision) setName(localStorage.getItem(NAME_KEY) ?? "");
@@ -388,6 +396,9 @@ export function CompanyActionButtons({
             <h3 className="text-lg font-bold text-neutral-900">{copy.title}</h3>
             <p className="mt-0.5 text-sm font-medium text-neutral-700">{c.name}</p>
             <p className="mt-2 text-sm text-neutral-500">{copy.body}</p>
+            {staffName ? (
+              <p className="mt-4 rounded-md bg-neutral-50 px-3 py-2 text-sm text-neutral-700">Recorded as <b>{staffName}</b> (your login).</p>
+            ) : (
             <label className="mt-4 block text-sm font-medium text-neutral-700">
               Your name{copy.nameRequired ? " *" : ""}
               <input
@@ -398,6 +409,7 @@ export function CompanyActionButtons({
                 className="mt-1.5 w-full rounded-md border border-neutral-300 px-3 py-2.5 text-sm outline-none focus:border-red-500"
               />
             </label>
+            )}
             <label className="mt-3 block text-sm font-medium text-neutral-700">
               Note <span className="font-normal text-neutral-400">(optional)</span>
               <textarea
@@ -414,7 +426,7 @@ export function CompanyActionButtons({
               </button>
               <button
                 onClick={confirm}
-                disabled={busy || (copy.nameRequired && name.trim().length < 2)}
+                disabled={busy || (copy.nameRequired && !staffName && name.trim().length < 2)}
                 className={`rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${copy.tone}`}
               >
                 {busy ? "Saving…" : copy.confirm}
