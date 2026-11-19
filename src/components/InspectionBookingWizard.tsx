@@ -643,8 +643,8 @@ function ConfirmStep() {
     <div className="rounded-xl bg-neutral-50 p-5 text-sm text-neutral-600">
       <p className="font-medium text-neutral-800">Almost done!</p>
       <p className="mt-1">
-        By confirming, you&apos;ll be taken to Stripe&apos;s secure checkout to pay the
-        inspection fee. Once payment is confirmed you&apos;ll receive a Job ID and a
+        By confirming, you&apos;ll go to our secure payment page where you can pay by card or split
+        the fee into 2, 3 or 4 payments with Tamara. Once payment is confirmed you&apos;ll receive a Job ID and a
         confirmation via SMS, email and WhatsApp.
       </p>
     </div>

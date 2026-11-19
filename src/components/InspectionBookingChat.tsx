@@ -5,6 +5,7 @@ import Link from "next/link";
 import BrandLogo from "./BrandLogo";
 import LocationPicker from "./LocationPicker";
 import CustomerOtpModal from "./CustomerOtpModal";
+import CustomerEmailVerifyModal from "./CustomerEmailVerifyModal";
 import BookingModeSwitch from "./BookingModeSwitch";
 import { useInspectionFee } from "./useInspectionFee";
 import type { ChatMessage, InspectionBookingResult, SelectedLocation } from "@/lib/types";
@@ -78,6 +79,7 @@ export default function InspectionBookingChat({
   const [result, setResult] = useState<InspectionBookingResult | null>(null);
   /** Customer OTP login modal (shown when the booking API requires login). */
   const [showOtp, setShowOtp] = useState(false);
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
   /** Seconds left before the customer can retry a rate-limited turn. */
   const [cooldown, setCooldown] = useState(0);
   /** True when the last turn failed because the assistant was rate limited. */
@@ -275,7 +277,7 @@ export default function InspectionBookingChat({
     await runTurn(history);
   }
 
-  async function confirmBooking() {
+  async function confirmBooking(overrides?: { email?: string }) {
     if (!booking) return;
     setSubmitting(true);
     setError("");
@@ -286,7 +288,7 @@ export default function InspectionBookingChat({
         body: JSON.stringify({
           customerName: booking.customerName,
           customerMobile: booking.customerMobile,
-          customerEmail: booking.customerEmail,
+          customerEmail: overrides?.email ?? booking.customerEmail,
           vin: booking.vin || undefined,
           make: booking.make || undefined,
           model: booking.model || undefined,
@@ -312,6 +314,8 @@ export default function InspectionBookingChat({
         setResult(bookingResult);
       } else if (res.status === 401 && data.loginRequired) {
         setShowOtp(true); // verify mobile, then retry
+      } else if (res.status === 403 && data.emailVerificationRequired) {
+        setVerifyEmail((overrides?.email ?? data.email ?? booking.customerEmail).trim()); // verify email once, then retry
       } else {
         setError(data.error || "Could not create your booking. Please try again.");
       }
@@ -478,6 +482,16 @@ export default function InspectionBookingChat({
         void confirmBooking();
       }}
     />
+  ) : verifyEmail !== null ? (
+    <CustomerEmailVerifyModal
+      email={verifyEmail}
+      onClose={() => setVerifyEmail(null)}
+      onVerified={(email) => {
+        setVerifyEmail(null);
+        setBooking((b) => (b ? { ...b, customerEmail: email } : b));
+        void confirmBooking({ email });
+      }}
+    />
   ) : null;
 
   /* ── Modal popup layout ──────────────────────────────────────────────── */
@@ -641,7 +655,7 @@ function LockedSummary({
         {submitting ? "Locking your booking…" : "Confirm & Lock Booking"}
       </button>
       <p className="mt-2 text-center text-[11px] text-neutral-500">
-        🔒 You&apos;ll be taken to Stripe&apos;s secure checkout to pay the inspection fee.
+        🔒 Next you&apos;ll choose how to pay: card, or split into 2, 3 or 4 payments with Tamara.
       </p>
     </div>
   );
