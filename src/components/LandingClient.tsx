@@ -121,8 +121,8 @@ export default function LandingClient() {
         <section className="relative overflow-hidden border-b border-neutral-100 bg-white">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/hero-bg.jpg?v=2"
-            alt="The Wheeler Dealers — Buy. Sell. Trade. Smarter. AI-powered car marketplace & inspection platform."
+            src="/hero-bg.jpg?v=3"
+            alt="The Wheeler Dealers — Buy. Sell. Trade. Drive Smarter. AI-Powered Vehicle Marketplace, Inspection & Ownership Care."
             className="w-full select-none"
             loading="eager"
             fetchPriority="high"
@@ -267,6 +267,7 @@ export default function LandingClient() {
           </nav>
           <p>© {new Date().getFullYear()} The Wheeler Dealers. All rights reserved.</p>
         </div>
+        <p className="pb-6 text-center text-xs text-neutral-400">Operated By Novasynergy Business Solutions Fzco</p>
       </footer>
 
       {auth && <AuthChooser mode={auth} onClose={() => setAuth(null)} onSwitch={(m) => setAuth(m)} />}

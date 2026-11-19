@@ -160,6 +160,7 @@ export default function InspectionLocation({ emirate }: { emirate: Emirate }) {
       <footer className="border-t border-neutral-200 py-8">
         <div className="mx-auto max-w-6xl px-5 text-center text-xs text-neutral-500">
           © {new Date().getFullYear()} The Wheeler Dealers. All rights reserved.
+          <p className="mt-1 text-neutral-400">Operated By Novasynergy Business Solutions Fzco</p>
         </div>
       </footer>
     </div>

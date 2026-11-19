@@ -307,6 +307,7 @@ export default function InspectionLanding() {
           </div>
           © {new Date().getFullYear()} The Wheeler Dealers. All rights reserved.
         </div>
+        <p className="pb-6 text-center text-xs text-neutral-400">Operated By Novasynergy Business Solutions Fzco</p>
       </footer>
     </div>
   );
