@@ -12,6 +12,7 @@ const SERVICE_OPTIONS = [
   { id: "emergency_tow", label: "Emergency towing" },
   { id: "fuel_delivery", label: "Fuel delivery" },
   { id: "scheduled_tow", label: "Scheduled towing (bidding)" },
+  { id: "accessories", label: "Accessories" },
 ];
 
 const inp = "w-full rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-red-500";
@@ -534,7 +535,7 @@ function PartnersTab({ onUnauthorized }: { onUnauthorized: () => void }) {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <button onClick={() => setCreate(true)} className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white">+ Add Care partner</button>
         <span className="text-xs text-neutral-500">
-          Care partners register through the normal partner sign-up (Partner type: Towing &amp; Roadside) and are approved in <b>2. Manage Companies</b> like any partner. They sign in at /manage-inspections.
+          Care partners register through the normal partner sign-up (Service Type: Towing, Battery, Fuel or Accessories) and are approved in <b>2. Manage Companies</b> like any partner. They sign in at /manage-inspections.
         </span>
       </div>
       {msg && <p className="mb-3 rounded-md bg-neutral-900 px-3 py-2 text-sm text-white">{msg}</p>}

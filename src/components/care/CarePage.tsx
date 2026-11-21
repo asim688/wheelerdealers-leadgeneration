@@ -4,23 +4,38 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import CustomerOtpModal from "../CustomerOtpModal";
 import { AddressField, CareFooter, CareHeader, Field, aed, inputCls, type AddressValue } from "./careUi";
+import { IconArrow, IconBag, IconBattery, IconCheck, IconClock, IconFuel, IconOil, IconPhone, IconPin, IconSearch, IconShield, IconSiren, IconTag, IconToolbox, IconTruck } from "./careIcons";
 
 type Tab = "roadside" | "care";
 type RoadsideService = "jump_start" | "emergency_tow" | "fuel_delivery";
 type CareView = "battery" | "oil" | "accessory" | "towing";
 type FormService = RoadsideService | "scheduled_tow";
 
-const ROADSIDE: { id: RoadsideService; title: string; sub: string; icon: string }[] = [
-  { id: "jump_start", title: "Jump Start", sub: "Battery assistance", icon: "🔋" },
-  { id: "emergency_tow", title: "Emergency Tow", sub: "WD-managed dispatch", icon: "🚨" },
-  { id: "fuel_delivery", title: "Fuel Delivery", sub: "Emergency supply", icon: "⛽" },
+type IconC = (p: { className?: string }) => React.JSX.Element;
+interface ServiceDef { id: string; title: string; sub: string; blurb: string; Icon: IconC; badges: string[]; urgent?: boolean }
+
+const ROADSIDE: (ServiceDef & { id: RoadsideService })[] = [
+  { id: "emergency_tow", title: "Emergency Tow", sub: "WD-managed dispatch", blurb: "Breakdown or accident? WD assigns the nearest available recovery partner and keeps you updated until your car is safe.", Icon: IconSiren, badges: ["Urgent", "Pay on site"], urgent: true },
+  { id: "jump_start", title: "Jump Start", sub: "Battery assistance", blurb: "Dead battery? A partner comes to you and gets the car running again.", Icon: IconBattery, badges: ["WD-managed", "Pay on site"] },
+  { id: "fuel_delivery", title: "Fuel Delivery", sub: "Emergency supply", blurb: "Out of fuel? Petrol or diesel delivered to where you are.", Icon: IconFuel, badges: ["WD-managed", "Pay on site"] },
 ];
 
-const CARE: { id: Exclude<CareView, "towing">; title: string; sub: string; icon: string }[] = [
-  { id: "battery", title: "Car Batteries", sub: "Compatible products + price", icon: "🔋" },
-  { id: "oil", title: "Oil & Filters", sub: "Product price + order", icon: "🛢️" },
-  { id: "accessory", title: "Accessories", sub: "Browse + purchase", icon: "🧰" },
+const CARE: (ServiceDef & { id: Exclude<CareView, "towing"> })[] = [
+  { id: "battery", title: "Car Batteries", sub: "Compatible products + price", blurb: "Find the right battery for your car — delivered, or delivered and fitted.", Icon: IconBattery, badges: ["Fits your car", "VAT included"] },
+  { id: "oil", title: "Oil & Filters", sub: "Product price + order", blurb: "Engine oil and filters matched to your vehicle.", Icon: IconOil, badges: ["Fits your car"] },
+  { id: "accessory", title: "Accessories", sub: "Browse + purchase", blurb: "Dash cams, sunshades, inflators and more.", Icon: IconToolbox, badges: ["Browse & buy"] },
 ];
+
+const QUICK: { label: string; tab: Tab; target: RoadsideService | CareView }[] = [
+  { label: "Jump start", tab: "roadside", target: "jump_start" },
+  { label: "Emergency tow", tab: "roadside", target: "emergency_tow" },
+  { label: "Fuel", tab: "roadside", target: "fuel_delivery" },
+  { label: "Battery", tab: "care", target: "battery" },
+  { label: "Oil", tab: "care", target: "oil" },
+  { label: "Towing quotes", tab: "care", target: "towing" },
+];
+
+const EMIRATES_STRIP = ["Dubai", "Abu Dhabi", "Sharjah", "Ajman", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain"];
 
 /** Search index: what the customer might type → where it leads. */
 const SEARCH: { label: string; tab: Tab; target: RoadsideService | CareView; words: string[] }[] = [
@@ -77,97 +92,151 @@ export default function CarePage({ initialQuery = "" }: { initialQuery?: string 
     }
   };
 
+  const pick = (m: { tab: Tab; target: RoadsideService | CareView }) => {
+    go(m);
+    setQuery("");
+  };
+
   return (
-    <div className="flex min-h-screen flex-col bg-neutral-50">
+    <div className="flex min-h-screen flex-col bg-white">
       <CareHeader />
       <main className="flex-1">
-        <section className="bg-gradient-to-br from-red-700 via-red-600 to-red-800 px-5 pb-16 pt-10 text-white">
-          <div className="mx-auto max-w-4xl">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-100">The Wheeler Dealers / Care</p>
-            <h1 className="mt-2 text-3xl font-extrabold sm:text-4xl">Your Car. Our Care.</h1>
-            <p className="mt-1 text-sm text-red-100">How can we help with your car today?</p>
-            <form onSubmit={submitSearch} className="relative mt-5">
-              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400">⌕</span>
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search jump start, towing, car batteries, fuel delivery, accessories..."
-                className="w-full rounded-xl border-0 bg-white py-3.5 pl-10 pr-4 text-sm text-neutral-900 shadow-lg outline-none ring-2 ring-transparent placeholder:text-neutral-400 focus:ring-red-200"
-                aria-label="How can we help with your car today?"
-              />
-              {matches.length > 0 && (
-                <ul className="absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-xl border border-neutral-200 bg-white text-sm text-neutral-800 shadow-xl">
-                  {matches.map((m) => (
-                    <li key={m.label}>
-                      <button type="button" onClick={() => { go(m); setQuery(""); }} className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-red-50">
-                        <span>{m.label}</span>
-                        <span className="text-xs text-neutral-400">{m.tab === "roadside" ? "Roadside Assistance" : "Car Care & Accessories"}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </form>
+        {/* Hero — Grid Pattern + soft glow, light */}
+        <section className="relative overflow-hidden">
+          <div aria-hidden className="care-grid-bg absolute inset-0" />
+          <div aria-hidden className="absolute -right-24 -top-32 h-96 w-96 rounded-full bg-red-200/50 blur-3xl" />
+          <div aria-hidden className="absolute -left-32 top-40 h-72 w-72 rounded-full bg-rose-100/70 blur-3xl" />
+
+          <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-5 pb-12 pt-10 sm:pt-16 lg:grid-cols-[1.2fr_1fr] lg:pb-16">
+            <div>
+              <p className="care-pop inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/80 px-3 py-1 text-xs font-medium text-neutral-600 shadow-sm backdrop-blur">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75 motion-reduce:hidden" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-red-600" />
+                </span>
+                The Wheeler Dealers / Care · All 7 emirates
+              </p>
+              <h1 className="care-pop mt-5 text-[2.75rem] font-extrabold leading-[1.02] tracking-tight text-neutral-900 [animation-delay:80ms] sm:text-6xl">
+                Your Car.
+                <br />
+                <span className="care-gradient-text">Our Care.</span>
+              </h1>
+              <p className="care-pop mt-4 max-w-lg text-base text-neutral-600 [animation-delay:160ms] sm:text-lg">
+                Roadside help, towing quotes and car-care products — in one place. How can we help with your car today?
+              </p>
+
+              <form onSubmit={submitSearch} className="care-pop relative mt-7 max-w-xl [animation-delay:240ms]">
+                <div className="care-beam rounded-2xl bg-white shadow-xl shadow-red-900/5">
+                  <IconSearch className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search jump start, towing, car batteries, fuel delivery, accessories..."
+                    className="relative h-14 w-full rounded-2xl border border-neutral-200 bg-white pl-12 pr-28 text-[15px] text-neutral-900 outline-none text-ellipsis placeholder:text-neutral-400 focus:border-red-300"
+                    aria-label="How can we help with your car today?"
+                  />
+                  <button type="submit" className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-600">
+                    Search
+                  </button>
+                </div>
+                {matches.length > 0 && (
+                  <ul className="absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-neutral-200 bg-white text-sm text-neutral-800 shadow-2xl">
+                    {matches.map((m) => (
+                      <li key={m.label}>
+                        <button type="button" onClick={() => pick(m)} className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-red-50">
+                          <span className="font-medium">{m.label}</span>
+                          <span className="text-xs text-neutral-400">{m.tab === "roadside" ? "Roadside Assistance" : "Car Care & Accessories"}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </form>
+
+              <div className="care-pop mt-4 flex flex-wrap gap-2 [animation-delay:320ms]" aria-label="Popular searches">
+                {QUICK.map((q) => (
+                  <button key={q.label} type="button" onClick={() => pick(q)} className="rounded-full border border-neutral-200 bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-700 shadow-sm transition-all hover:-translate-y-px hover:border-red-300 hover:text-red-700">
+                    {q.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <LiveDemo />
           </div>
         </section>
 
-        <div className="mx-auto -mt-8 max-w-4xl px-5 pb-14">
-          <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
-            {(["roadside", "care"] as Tab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-4 py-4 text-left transition-colors sm:px-6 ${tab === t ? "bg-white" : "bg-neutral-50 hover:bg-neutral-100"}`}
-                aria-pressed={tab === t}
-              >
-                <span className={`block text-sm font-bold uppercase tracking-wide ${tab === t ? "text-red-700" : "text-neutral-700"}`}>
-                  {t === "roadside" ? "Roadside Assistance" : "Car Care & Accessories"}
-                </span>
-                <span className="mt-0.5 block text-xs text-neutral-500">
-                  {t === "roadside" ? "Jump Start | Emergency Towing | Fuel" : "Batteries | Oil | Accessories | Towing"}
-                </span>
-                <span className={`mt-3 block h-0.5 rounded ${tab === t ? "bg-red-600" : "bg-transparent"}`} />
-              </button>
+        {/* Marquee — coverage + promises */}
+        <div className="care-marquee overflow-hidden border-y border-neutral-100 bg-neutral-50/70 py-3">
+          <div className="care-marquee-track flex w-max gap-8 pr-8">
+            {[0, 1].map((k) => (
+              <div key={k} aria-hidden={k === 1} className="flex shrink-0 items-center gap-8 text-sm font-medium text-neutral-500">
+                {EMIRATES_STRIP.map((e) => (
+                  <span key={e} className="inline-flex items-center gap-1.5"><IconPin className="h-4 w-4 text-red-500" />{e}</span>
+                ))}
+                <span className="inline-flex items-center gap-1.5"><IconShield className="h-4 w-4 text-red-500" />Approved partners only</span>
+                <span className="inline-flex items-center gap-1.5"><IconTag className="h-4 w-4 text-red-500" />VAT-inclusive prices</span>
+                <span className="inline-flex items-center gap-1.5"><IconClock className="h-4 w-4 text-red-500" />Live status in My requests</span>
+              </div>
             ))}
           </div>
+        </div>
 
-          <div id="care-content" className="scroll-mt-20 pt-6">
-            {tab === "roadside" ? (
-              <>
-                <p className="mb-3 text-sm text-neutral-600">WD coordinates the service; approved partners fulfil it.</p>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {ROADSIDE.map((s) => (
-                    <ServiceCard key={s.id} icon={s.icon} title={s.title} sub={s.sub} active={roadside === s.id} onClick={() => setRoadside(s.id)} />
-                  ))}
-                </div>
-                <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  If anyone is hurt or in danger, call <b>999</b> first. Estimated arrival and charges are shown only once confirmed by WD or the partner.
-                </p>
-                {roadside && <RequestForm key={roadside} service={roadside} />}
-                {!roadside && <p className="mt-6 text-center text-sm text-neutral-500">Select a service to send a request.</p>}
-              </>
-            ) : (
-              <>
-                <p className="mb-3 text-sm text-neutral-600">Visible VAT-inclusive prices, plus scheduled towing with partner quotes.</p>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {CARE.map((c) => (
-                    <ServiceCard key={c.id} icon={c.icon} title={c.title} sub={c.sub} active={careView === c.id} onClick={() => setCareView(c.id)} />
-                  ))}
-                </div>
+        <div className="mx-auto max-w-6xl px-5 pb-20 pt-10">
+          {/* Segmented tabs */}
+          <div role="tablist" aria-label="Care categories" className="mx-auto grid max-w-xl grid-cols-2 gap-1 rounded-2xl bg-neutral-100 p-1">
+            {(["roadside", "care"] as Tab[]).map((t) => {
+              const on = tab === t;
+              const Icon = t === "roadside" ? IconSiren : IconBag;
+              return (
                 <button
-                  onClick={() => setCareView("towing")}
-                  className={`mt-3 flex w-full items-center justify-between gap-3 rounded-2xl border-2 p-4 text-left transition-colors ${careView === "towing" ? "border-red-600 bg-red-50" : "border-red-200 bg-white hover:border-red-400"}`}
+                  key={t}
+                  role="tab"
+                  aria-selected={on}
+                  aria-pressed={on}
+                  onClick={() => setTab(t)}
+                  className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${on ? "bg-white text-red-700 shadow-sm ring-1 ring-black/5" : "text-neutral-600 hover:text-neutral-900"}`}
                 >
-                  <span>
-                    <span className="block text-base font-bold text-neutral-900">🚛 Vehicle Towing — Get Quotes</span>
-                    <span className="block text-xs text-neutral-500">Scheduled transport · Reverse bidding · Compare partner offers (price + arrival time)</span>
-                  </span>
-                  <span className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white">Get Quotes</span>
+                  <Icon className="h-4 w-4" />
+                  {t === "roadside" ? "Roadside Assistance" : "Car Care & Accessories"}
                 </button>
+              );
+            })}
+          </div>
+
+          <div id="care-content" className="scroll-mt-20 pt-8">
+            {tab === "roadside" ? (
+              <div key="roadside" className="care-pop">
+                <SectionHead eyebrow="WD-managed" title="Roadside Assistance" text="WD coordinates the service; approved partners fulfil it. You pay the partner on site." />
+                <div className="grid gap-4 md:grid-cols-2 md:grid-rows-2">
+                  {ROADSIDE.map((s, i) => (
+                    <ServiceCard key={s.id} def={s} big={i === 0} className={i === 0 ? "md:row-span-2" : ""} active={roadside === s.id} onClick={() => setRoadside(s.id)} />
+                  ))}
+                </div>
+                <a href="tel:999" className="mt-4 flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700 transition-colors hover:border-red-200">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                    <IconPhone className="h-4 w-4" />
+                  </span>
+                  <span>
+                    <b className="text-neutral-900">Anyone hurt or in danger? Call 999 first.</b>{" "}
+                    <span className="text-neutral-500">Estimated arrival and charges are shown only once confirmed by WD or the partner.</span>
+                  </span>
+                </a>
+                {roadside ? <RequestForm key={roadside} service={roadside} /> : <HowItWorks steps={ROADSIDE_STEPS} />}
+              </div>
+            ) : (
+              <div key="care" className="care-pop">
+                <SectionHead eyebrow="VAT-inclusive prices" title="Car Care & Accessories" text="Products that fit your car, plus scheduled towing with partner quotes." />
+                <div className="grid gap-4 md:grid-cols-4 md:grid-rows-2">
+                  <TowingTile active={careView === "towing"} onClick={() => setCareView("towing")} />
+                  {CARE.map((c, i) => (
+                    <ServiceCard key={c.id} def={c} className={i === 0 ? "md:col-span-2" : ""} active={careView === c.id} onClick={() => setCareView(c.id)} />
+                  ))}
+                </div>
                 {careView === "towing" && <RequestForm key="tow" service="scheduled_tow" />}
                 {careView && careView !== "towing" && <Catalogue key={careView} category={careView} />}
-                {!careView && <p className="mt-6 text-center text-sm text-neutral-500">Select a category to view available products and services.</p>}
-              </>
+                {!careView && <HowItWorks steps={CARE_STEPS} />}
+              </div>
             )}
           </div>
         </div>
@@ -177,16 +246,187 @@ export default function CarePage({ initialQuery = "" }: { initialQuery?: string 
   );
 }
 
-function ServiceCard({ icon, title, sub, active, onClick }: { icon: string; title: string; sub: string; active: boolean; onClick: () => void }) {
+/** Animated List: an example request moving through its statuses. */
+const DEMO_STEPS = [
+  { Icon: IconPin, title: "Request received", text: "Jump start · Dubai Marina", tone: "bg-neutral-100 text-neutral-700" },
+  { Icon: IconShield, title: "WD reviewing", text: "Finding an approved partner nearby", tone: "bg-amber-50 text-amber-700" },
+  { Icon: IconCheck, title: "Partner assigned", text: "Charge and arrival time confirmed with you", tone: "bg-blue-50 text-blue-700" },
+  { Icon: IconTruck, title: "On the way", text: "Track it live under My requests", tone: "bg-indigo-50 text-indigo-700" },
+  { Icon: IconCheck, title: "Completed", text: "Pay the partner on site", tone: "bg-green-50 text-green-700" },
+];
+
+function LiveDemo() {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return setN(DEMO_STEPS.length - 1);
+    const t = setInterval(() => setN((c) => (c + 1) % DEMO_STEPS.length), 1800);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div aria-hidden className="relative mx-auto hidden w-full max-w-sm lg:block">
+      <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-br from-red-100/60 via-white to-rose-50 blur-xl" />
+      <div className="relative rounded-3xl border border-neutral-200 bg-white/90 p-4 shadow-2xl shadow-red-900/10 backdrop-blur">
+        <div className="mb-3 flex items-center justify-between px-1">
+          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Example request</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" /> Live updates
+          </span>
+        </div>
+        <ul className="space-y-2">
+          {DEMO_STEPS.map((s, i) => {
+            const state = i < n ? "done" : i === n ? "now" : "next";
+            return (
+              <li
+                key={s.title}
+                className={`flex items-center gap-3 rounded-2xl border p-3 transition-all duration-500 ${state === "now" ? "care-pop border-red-200 bg-white shadow-md shadow-red-100" : state === "done" ? "border-neutral-100 bg-white" : "border-dashed border-neutral-200 bg-neutral-50/60 opacity-50"}`}
+              >
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${state === "next" ? "bg-neutral-100 text-neutral-400" : s.tone}`}>
+                  <s.Icon className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-neutral-900">{s.title}</span>
+                  <span className="block truncate text-xs text-neutral-500">{s.text}</span>
+                </span>
+                {state === "done" && <IconCheck className="h-4 w-4 shrink-0 text-green-600" />}
+                {state === "now" && <span className="h-2 w-2 shrink-0 animate-ping rounded-full bg-red-500" />}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+const ROADSIDE_STEPS = [
+  { Icon: IconPin, title: "Tell us where you are", text: "Pick a service and send a short request with your location." },
+  { Icon: IconShield, title: "WD assigns a partner", text: "We review it and confirm the charge and arrival time with you." },
+  { Icon: IconCheck, title: "Pay when it's done", text: "You pay the partner on the spot after the service." },
+];
+
+const CARE_STEPS = [
+  { Icon: IconSearch, title: "Choose what you need", text: "Batteries, oil, accessories — or request towing quotes." },
+  { Icon: IconTag, title: "Compare clearly", text: "VAT-inclusive prices, compatibility and, for towing, price with arrival time." },
+  { Icon: IconCheck, title: "Order or book", text: "Pay online by card or Tamara and track everything under My requests." },
+];
+
+const spotlight = (e: React.MouseEvent<HTMLElement>) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.style.setProperty("--x", `${e.clientX - r.left}px`);
+  e.currentTarget.style.setProperty("--y", `${e.clientY - r.top}px`);
+};
+
+function SectionHead({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) {
+  return (
+    <div className="mb-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-red-600">{eyebrow}</p>
+      <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-neutral-900 sm:text-3xl">{title}</h2>
+      <p className="mt-1 text-sm text-neutral-500">{text}</p>
+    </div>
+  );
+}
+
+function HowItWorks({ steps }: { steps: { Icon: IconC; title: string; text: string }[] }) {
+  return (
+    <section className="mt-12">
+      <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.16em] text-neutral-400">How it works</p>
+      <ol className="relative grid gap-6 sm:grid-cols-3">
+        <span aria-hidden className="absolute left-[16%] right-[16%] top-6 hidden border-t-2 border-dashed border-red-200 sm:block" />
+        {steps.map((s, i) => (
+          <li key={s.title} className="relative text-center">
+            <span className="relative mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-neutral-200 bg-white text-red-600 shadow-sm">
+              <s.Icon className="h-5 w-5" />
+              <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white">{i + 1}</span>
+            </span>
+            <span className="mt-3 block text-sm font-bold text-neutral-900">{s.title}</span>
+            <span className="mx-auto mt-1 block max-w-[16rem] text-xs leading-relaxed text-neutral-500">{s.text}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** Magic Card + Bento tile. */
+function ServiceCard({ def, active, onClick, big, className = "" }: { def: ServiceDef; active: boolean; onClick: () => void; big?: boolean; className?: string }) {
+  const { Icon } = def;
   return (
     <button
       onClick={onClick}
+      onMouseMove={spotlight}
       aria-pressed={active}
-      className={`rounded-2xl border-2 bg-white p-4 text-left transition-colors ${active ? "border-red-600 bg-red-50/50" : "border-neutral-200 hover:border-red-300"}`}
+      className={`care-spot group flex flex-col overflow-hidden rounded-3xl border bg-white p-5 text-left transition-all duration-300 sm:p-6 ${active ? "border-red-300 shadow-lg shadow-red-100 ring-2 ring-red-500/30" : "border-neutral-200 hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-xl hover:shadow-neutral-200/60"} ${className}`}
     >
-      <span className="text-2xl" aria-hidden>{icon}</span>
-      <span className="mt-2 block text-sm font-bold uppercase tracking-wide text-neutral-900">{title}</span>
-      <span className="block text-xs text-neutral-500">{sub}</span>
+      {big && <span aria-hidden className="care-grid-bg pointer-events-none absolute inset-0 -z-10 opacity-70 [mask-image:radial-gradient(ellipse_at_top_right,#000_15%,transparent_70%)]" />}
+      <span className="flex items-start justify-between gap-3">
+        <span className={`flex shrink-0 items-center justify-center rounded-2xl transition-colors ${big ? "h-16 w-16" : "h-12 w-12"} ${active ? "bg-red-600 text-white" : "bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white"}`}>
+          <Icon className={big ? "h-8 w-8" : "h-6 w-6"} />
+        </span>
+        <span className={`flex h-8 w-8 items-center justify-center rounded-full border transition-all ${active ? "border-red-600 bg-red-600 text-white" : "border-neutral-200 text-neutral-400 group-hover:border-red-600 group-hover:bg-red-600 group-hover:text-white"}`}>
+          {active ? <IconCheck className="h-4 w-4" /> : <IconArrow className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />}
+        </span>
+      </span>
+      {big && (
+        <span aria-hidden className="mt-8 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold">
+          {["Submitted", "WD Reviewing", "Partner Assigned", "En Route", "Completed"].map((t, i, a) => (
+            <span key={t} className="inline-flex items-center gap-1.5">
+              <span className={`rounded-full px-2.5 py-1 ${i === 0 ? "bg-red-600 text-white" : "border border-neutral-200 bg-white text-neutral-500"}`}>{t}</span>
+              {i < a.length - 1 && <span className="text-neutral-300">›</span>}
+            </span>
+          ))}
+        </span>
+      )}
+      <span className={`block ${big ? "mt-auto pt-8" : "mt-5"}`}>
+        <span className="flex flex-wrap items-center gap-2">
+          <span className={`font-bold tracking-tight text-neutral-900 ${big ? "text-2xl" : "text-lg"}`}>{def.title}</span>
+          {def.urgent && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-600 ring-1 ring-red-200">Urgent</span>}
+        </span>
+        <span className="mt-1 block text-sm leading-relaxed text-neutral-500">{def.blurb}</span>
+        <span className="mt-4 flex flex-wrap gap-1.5">
+          {def.badges.filter((b) => b !== "Urgent").map((b) => (
+            <span key={b} className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-0.5 text-[11px] font-medium text-neutral-600">{b}</span>
+          ))}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** Big bento tile for scheduled towing: Border Beam + Shimmer Button + mini bid comparison. */
+function TowingTile({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      onMouseMove={spotlight}
+      aria-pressed={active}
+      className={`care-spot care-beam group flex flex-col overflow-hidden rounded-3xl border bg-gradient-to-br from-white to-red-50/60 p-5 text-left transition-all sm:p-6 md:col-span-2 md:row-span-2 ${active ? "border-red-300 ring-2 ring-red-500/30" : "border-neutral-200 hover:shadow-xl hover:shadow-red-100/60"}`}
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600 text-white shadow-lg shadow-red-200">
+          <IconTruck className="h-7 w-7" />
+        </span>
+        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-red-700 ring-1 ring-red-200">Reverse bidding · 15 min</span>
+      </span>
+      <span className="mt-5 block text-2xl font-bold tracking-tight text-neutral-900">Vehicle Towing — Get Quotes</span>
+      <span className="mt-1 block text-sm leading-relaxed text-neutral-500">Scheduled transport. Approved partners bid — you compare price and arrival time side by side, then choose.</span>
+      <span aria-hidden className="mt-5 block space-y-2">
+        {[
+          ["Partner A", "AED —", "ETA — min", "w-3/5"],
+          ["Partner B", "AED —", "ETA — min", "w-4/5"],
+        ].map(([p, a, e, w]) => (
+          <span key={p} className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white/90 px-3 py-2 text-xs">
+            <span className="h-7 w-7 shrink-0 rounded-full bg-neutral-100" />
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold text-neutral-800">{p}</span>
+              <span className={`mt-1 block h-1.5 rounded-full bg-red-100 ${w}`} />
+            </span>
+            <span className="text-right text-neutral-500">{a}<br />{e}</span>
+          </span>
+        ))}
+      </span>
+      <span className="care-shimmer mt-auto inline-flex w-fit items-center gap-2 self-start rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-red-200 transition-colors group-hover:bg-red-700 [margin-top:1.25rem]">
+        Get Quotes <IconArrow className="h-4 w-4" />
+      </span>
     </button>
   );
 }
@@ -277,7 +517,7 @@ function RequestForm({ service }: { service: FormService }) {
   };
 
   return (
-    <div className="mt-5 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+    <div className="mt-6 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
       {otp && (
         <CustomerOtpModal
           mobile={profile?.mobile}
@@ -288,13 +528,19 @@ function RequestForm({ service }: { service: FormService }) {
           }}
         />
       )}
-      <h2 className="text-lg font-bold text-neutral-900">{FORM_TITLE[service]}</h2>
-      <p className="mb-4 text-sm text-neutral-500">
+      <div className="border-b border-neutral-100 bg-neutral-50 px-5 py-4 sm:px-6">
+      <h2 className="flex items-center gap-2 text-lg font-extrabold text-neutral-900">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-600 text-white">{service === "scheduled_tow" || service === "emergency_tow" ? <IconTruck className="h-4 w-4" /> : service === "fuel_delivery" ? <IconFuel className="h-4 w-4" /> : <IconBattery className="h-4 w-4" />}</span>
+        {FORM_TITLE[service]}
+      </h2>
+      <p className="mt-1 text-sm text-neutral-500">
         {tow
           ? "Tell us the pickup, destination and timing. For the next 15 minutes approved towing partners send their price (incl. VAT) and arrival time — you compare, choose and pay online (card or Tamara)."
           : "Send a short request. WD reviews it, assigns an available partner and confirms the charge and arrival time with you. You pay the partner on the spot once the service is done."}
       </p>
-      <div className="space-y-4">
+      </div>
+      <div className="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
+        <FormStep n={1} title="Your details" />
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Your name" required>
             <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Full name" />
@@ -303,6 +549,7 @@ function RequestForm({ service }: { service: FormService }) {
             <input value={profile?.mobile ?? ""} readOnly placeholder="Verified when you send" className={`${inputCls} bg-neutral-50`} />
           </Field>
         </div>
+        <FormStep n={2} title="Your vehicle" />
         <div className="grid grid-cols-3 gap-3">
           <Field label="Make" required>
             <input value={vehicle.make} onChange={(e) => setVehicle({ ...vehicle, make: e.target.value })} className={inputCls} placeholder="Toyota" />
@@ -315,6 +562,7 @@ function RequestForm({ service }: { service: FormService }) {
           </Field>
         </div>
 
+        <FormStep n={3} title="Location" />
         <AddressField label={tow || service === "emergency_tow" ? "Pickup location" : "Where is the car?"} value={pickup} onChange={setPickup} />
 
         {(tow || service === "emergency_tow") && (
@@ -368,15 +616,27 @@ function RequestForm({ service }: { service: FormService }) {
           </div>
         )}
 
+        <FormStep n={4} title={tow ? "Notes" : "What happened"} />
         <Field label={service === "jump_start" ? "What's the problem?" : service === "emergency_tow" ? "Condition / safety notes" : "Notes"} required={service === "jump_start"}>
           <textarea value={issue} onChange={(e) => setIssue(e.target.value)} rows={2} className={inputCls} placeholder={service === "jump_start" ? "e.g. Car won't start, lights are dim" : "Anything the partner should know"} />
         </Field>
 
         {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        <button onClick={() => void submit()} disabled={busy} className="w-full rounded-lg bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
-          {busy ? "Sending…" : tow ? "Request Partner Bids" : "Submit Request"}
-        </button>
+        <div className="sticky bottom-3 z-10 -mx-1 rounded-xl bg-white/90 p-1 backdrop-blur sm:static sm:m-0 sm:bg-transparent sm:p-0">
+          <button onClick={() => void submit()} disabled={busy} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-red-200 transition-colors hover:bg-red-700 disabled:opacity-50">
+            {busy ? "Sending…" : tow ? "Request Partner Bids" : "Submit Request"} {!busy && <IconArrow className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function FormStep({ n, title }: { n: number; title: string }) {
+  return (
+    <div className="flex items-center gap-2.5 border-t border-neutral-100 pt-4 first:border-0 first:pt-0">
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white">{n}</span>
+      <span className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">{title}</span>
     </div>
   );
 }
@@ -404,7 +664,7 @@ interface CartLine {
   qty: number;
 }
 
-const CAT_ICON: Record<string, string> = { battery: "🔋", oil: "🛢️", accessory: "🧰" };
+const CAT_ICON: Record<string, IconC> = { battery: IconBattery, oil: IconOil, accessory: IconToolbox };
 
 function Catalogue({ category }: { category: Exclude<CareView, "towing"> }) {
   const profile = useCustomerProfile();
@@ -479,7 +739,7 @@ function Catalogue({ category }: { category: Exclude<CareView, "towing"> }) {
             <div key={p.id} className="flex gap-3 rounded-2xl border border-neutral-200 bg-white p-4">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-neutral-100 text-3xl">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                {p.imageUrl ? <img src={p.imageUrl} alt="" className="h-full w-full object-cover" /> : <span aria-hidden>{CAT_ICON[p.category]}</span>}
+                {p.imageUrl ? <img src={p.imageUrl} alt="" className="h-full w-full object-cover" /> : (() => { const Ico = CAT_ICON[p.category] ?? IconToolbox; return <Ico className="h-8 w-8 text-red-600" />; })()}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">

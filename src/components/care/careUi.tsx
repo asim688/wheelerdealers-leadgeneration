@@ -5,6 +5,7 @@ import Link from "next/link";
 import BrandLogo from "../BrandLogo";
 import LocationPicker from "../LocationPicker";
 import type { SelectedLocation } from "@/lib/types";
+import { IconPhone } from "./careIcons";
 
 export const EMIRATES = ["Dubai", "Abu Dhabi", "Sharjah", "Ajman", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain"];
 
@@ -155,9 +156,12 @@ export function CareHeader({ right }: { right?: React.ReactNode }) {
           <Link href="/care" className="rounded-md px-2.5 py-2 font-medium text-neutral-700 hover:bg-neutral-100 sm:px-3">
             Care
           </Link>
-          <Link href="/care/requests" className="rounded-md px-2.5 py-2 font-medium text-neutral-700 hover:bg-neutral-100 sm:px-3">
+          <Link href="/care/requests" className="rounded-full border border-neutral-300 px-3.5 py-1.5 font-medium text-neutral-800 hover:border-neutral-900 hover:bg-neutral-50">
             My requests
           </Link>
+          <a href="tel:999" className="ml-1 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700">
+            <IconPhone className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Emergency</span> 999
+          </a>
           {right}
         </div>
       </div>

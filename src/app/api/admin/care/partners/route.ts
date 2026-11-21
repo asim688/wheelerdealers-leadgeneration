@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdminIdentity } from "@/lib/adminIdentity";
-import { partnerEmirates, partnerServices } from "@/lib/care";
+import { isCareService, partnerEmirates } from "@/lib/care";
+import { ACCESSORIES_MARK } from "@/lib/serviceType";
 
 export const runtime = "nodejs";
 
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
       contactName: p.pocName,
       email: p.email,
       phone: p.pocMobile || p.phone,
-      services: partnerServices(p),
+      services: (p.careServices ?? "").split(",").map((x) => x.trim()).filter((x) => isCareService(x) || x === ACCESSORIES_MARK),
       emirates: partnerEmirates(p),
       active: p.active,
       approvalStatus: p.approvalStatus,

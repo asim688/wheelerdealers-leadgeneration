@@ -1,3 +1,4 @@
+import { ACCESSORIES_MARK } from "./serviceType";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCompanyId } from "@/lib/auth";
@@ -126,8 +127,8 @@ export function parseCarePartnerInput(b: Record<string, unknown>):
   | { ok: false; error: string } {
   const type = b.partnerType === "care" ? "care" : "inspection";
   if (type === "inspection") return { ok: true, data: { partnerType: "inspection", careServices: null, careEmirates: null } };
-  const services = (Array.isArray(b.careServices) ? b.careServices : []).filter(isCareService);
-  if (!services.length) return { ok: false, error: "Choose at least one Care service (towing, jump start or fuel delivery)." };
+  const services = (Array.isArray(b.careServices) ? b.careServices : []).filter((x) => isCareService(x) || x === ACCESSORIES_MARK);
+  if (!services.length) return { ok: false, error: "Choose the Service Type (towing, battery, fuel or accessories)." };
   const emirates = (Array.isArray(b.careEmirates) ? b.careEmirates : []).filter((e): e is string => typeof e === "string" && ALL_EMIRATES.includes(e));
   return {
     ok: true,

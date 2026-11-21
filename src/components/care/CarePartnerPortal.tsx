@@ -288,7 +288,7 @@ function PartnerLogin({ onIn }: { onIn: () => void }) {
         </div>
         {err && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
         <button disabled={busy} className="mt-4 w-full rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">{busy ? "Signing in…" : "Sign in"}</button>
-        <p className="mt-4 text-center text-xs text-neutral-400">New partner? <Link href="/company?register=1" className="underline">Register</Link> and choose &quot;Towing &amp; Roadside&quot;.</p>
+        <p className="mt-4 text-center text-xs text-neutral-400">New partner? <Link href="/company?register=1" className="underline">Register</Link> and pick your Service Type (Towing, Battery, Fuel or Accessories).</p>
       </form>
     </main>
   );
