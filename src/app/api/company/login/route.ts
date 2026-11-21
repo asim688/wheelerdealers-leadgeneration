@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   }
 
   const res = NextResponse.json({
-    company: { id: company.id, name: company.name, email: company.email },
+    company: { id: company.id, name: company.name, email: company.email, partnerType: company.partnerType },
   });
   res.cookies.set(
     COMPANY_COOKIE,

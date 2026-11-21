@@ -152,6 +152,11 @@ export default function CompanyPortal() {
         const res = await fetch("/api/company/me");
         if (res.ok) {
           const data = await res.json();
+          // Towing & roadside partners use the Care partner portal.
+          if (data.company?.partnerType === "care") {
+            window.location.replace("/care/partner");
+            return;
+          }
           setCompany(data.company);
           setView("dashboard");
           await loadAll("all");
@@ -845,6 +850,10 @@ function CompanyLogin({
         // fetch full profile
         const meRes = await fetch("/api/company/me");
         const me = meRes.ok ? await meRes.json() : { company: data.company };
+        if (me.company?.partnerType === "care") {
+          window.location.replace("/care/partner");
+          return;
+        }
         onLoggedIn(me.company);
       } else setError(data.error || "Login failed.");
     } catch {
@@ -984,6 +993,10 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
     bankBranch: "",
   });
   const [areas, setAreas] = useState<string[]>([]);
+  // One partner sign-up for everyone; the type decides which portal / jobs the partner gets.
+  const [partnerType, setPartnerType] = useState<"inspection" | "care">("inspection");
+  const [careServices, setCareServices] = useState<string[]>([]);
+  const toggleCare = (s: string) => setCareServices((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
   const [tradeFile, setTradeFile] = useState<File | null>(null);
   const [vatFile, setVatFile] = useState<File | null>(null);
   const [ibanFile, setIbanFile] = useState<File | null>(null);
@@ -1046,7 +1059,7 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
         const res = await fetch("/api/company/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...form, areas, proofs: Object.values(proofs) }),
+          body: JSON.stringify({ ...form, areas, proofs: Object.values(proofs), partnerType, careServices, careEmirates: areas }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) return setError(data.error || "Registration failed. Please try again.");
@@ -1109,10 +1122,41 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
         <div className="mb-6 text-center">
           <div className="flex justify-center"><BrandLogo size="md" /></div>
           <p className="mt-2 text-sm font-semibold text-neutral-700">Partner with Wheeler Dealers</p>
-          <p className="mt-1 text-xs text-neutral-500">Register your inspection company to receive live jobs</p>
+          <p className="mt-1 text-xs text-neutral-500">Register your company to receive live jobs — inspections or towing &amp; roadside (Care)</p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2 rounded-xl border border-red-100 bg-red-50/40 p-3">
+            <label className={label} htmlFor="reg-partner-type">Partner type *</label>
+            <select id="reg-partner-type" value={partnerType} onChange={(e) => setPartnerType(e.target.value as "inspection" | "care")} className={input}>
+              <option value="inspection">Vehicle Inspection company</option>
+              <option value="care">Towing &amp; Roadside (Care partner)</option>
+            </select>
+            {partnerType === "care" && (
+              <div className="mt-3">
+                <p className="mb-1.5 text-sm font-medium text-neutral-700">Care services you provide *</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ["scheduled_tow", "Scheduled towing (bidding)"],
+                    ["emergency_tow", "Emergency towing"],
+                    ["jump_start", "Battery jump start"],
+                    ["fuel_delivery", "Fuel delivery"],
+                  ].map(([id, text]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => toggleCare(id)}
+                      aria-pressed={careServices.includes(id)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${careServices.includes(id) ? "border-red-600 bg-red-50 text-red-700" : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"}`}
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-xs text-neutral-500">Service areas below: leave all unselected to cover every emirate.</p>
+              </div>
+            )}
+          </div>
           <p className={`sm:col-span-2 ${section}`}>Company</p>
           <div className="sm:col-span-2">
             <label className={label}>Company name *</label>
@@ -1136,10 +1180,12 @@ function CompanyRegister({ onBack }: { onBack: () => void }) {
             <label className={label}>Trade license <span className="font-normal text-neutral-400">(optional)</span></label>
             <input value={form.tradeLicense} onChange={(e) => set("tradeLicense", e.target.value)} className={input} placeholder="CN-1234567" />
           </div>
-          <div>
-            <label className={label}>Services <span className="font-normal text-neutral-400">(optional)</span></label>
-            <input value={form.services} onChange={(e) => set("services", e.target.value)} className={input} placeholder="Pre-purchase inspection…" />
-          </div>
+          {partnerType === "inspection" && (
+            <div>
+              <label className={label}>Services <span className="font-normal text-neutral-400">(optional)</span></label>
+              <input value={form.services} onChange={(e) => set("services", e.target.value)} className={input} placeholder="Pre-purchase inspection…" />
+            </div>
+          )}
 
           <p className={`sm:col-span-2 mt-2 ${section}`}>Company documents</p>
           <div className="sm:col-span-2">

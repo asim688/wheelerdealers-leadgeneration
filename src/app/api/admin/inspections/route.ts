@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.inspectionJob.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.inspectionCompany.findMany({
+      where: { partnerType: "inspection" },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),

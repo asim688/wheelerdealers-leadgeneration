@@ -47,6 +47,8 @@ export function fmtDateTime(iso: string): string {
 }
 
 export interface AdminCompany {
+  partnerType?: string;
+  careServices?: string | null;
   id: string;
   name: string;
   details: string | null;

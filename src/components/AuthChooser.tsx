@@ -28,7 +28,7 @@ const SIGN_UP = {
     icon: "motorist",
   } as Option,
   experts: [
-    { title: "Inspection Partner", body: "Accept live jobs and grow your business with a steady stream of inspection requests.", href: "/company?register=1", icon: "partner" },
+    { title: "Inspection Partner", body: "Inspection companies and towing & roadside (Care) partners — accept live jobs and grow your business.", href: "/company?register=1", icon: "partner" },
     { title: "Pro Dealer", body: "Access live auctions and increase your inventory with transparent vehicle reports you can trust.", comingSoon: true, icon: "dealer" },
   ] as Option[],
 };
@@ -41,7 +41,7 @@ const SIGN_IN = {
     icon: "motorist",
   } as Option,
   experts: [
-    { title: "Inspection Partner", body: "Manage inspections: jobs, inspectors, report reviews and payouts.", href: "/manage-inspections", icon: "partner" },
+    { title: "Inspection Partner", body: "Manage inspections or Care jobs: live jobs, bids, inspectors, reviews and payouts.", href: "/manage-inspections", icon: "partner" },
     { title: "Pro Dealer", body: "Access live auctions and increase your inventory.", comingSoon: true, icon: "dealer" },
   ] as Option[],
 };

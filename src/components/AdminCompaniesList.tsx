@@ -93,6 +93,7 @@ export default function AdminCompaniesList({
                     >
                       {c.name}
                     </Link>
+                    {c.partnerType === "care" && <span className="ml-1.5 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-indigo-700">Care partner</span>}
                     <p className="truncate text-xs text-neutral-500">
                       {c.email}
                       {c.tradeLicense ? ` · TL: ${c.tradeLicense}` : ""}

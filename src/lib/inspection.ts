@@ -305,7 +305,7 @@ export async function notifyCompaniesNewJob(job: {
   // Contact + email. Legacy standalone inspector-companies still get email/SMS.
   const [companies, legacy] = await Promise.all([
     prisma.inspectionCompany.findMany({
-      where: { active: true, approvalStatus: "approved" },
+      where: { active: true, approvalStatus: "approved", partnerType: "inspection" },
       select: { email: true, phone: true, pocMobile: true, pocEmail: true },
     }),
     prisma.inspector.findMany({

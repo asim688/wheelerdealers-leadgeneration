@@ -1,14 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { TabId } from "@/lib/types";
 import BrandLogo from "./BrandLogo";
 import ChatPanel from "./ChatPanel";
 import InspectionBookingChat from "./InspectionBookingChat";
 import AuthChooser from "./AuthChooser";
 
-/** The search tabs — the 4 chat intents plus the Inspection booking journey. */
-type TabKey = TabId | "inspection";
+/** The search tabs — the 4 chat intents, the Inspection booking journey and Care (its own page). */
+type TabKey = TabId | "inspection" | "care";
 
 interface TabConfig {
   id: TabKey;
@@ -29,6 +30,14 @@ const TABS: TabConfig[] = [
     placeholder: "Book a professional 300+ point vehicle inspection...",
     seed: "",
     icon: <SearchIcon />,
+  },
+  {
+    id: "care",
+    label: "Care",
+    cta: "Get Help",
+    placeholder: "How can we help with your car today?",
+    seed: "",
+    icon: <WrenchIcon />,
   },
   {
     id: "sell",
@@ -75,9 +84,14 @@ export default function LandingClient() {
   const [initialMessage, setInitialMessage] = useState("");
   const [sessionKey, setSessionKey] = useState(0);
   const active = TABS.find((t) => t.id === activeTab)!;
+  const router = useRouter();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (activeTab === "care") {
+      router.push(query.trim() ? `/care?q=${encodeURIComponent(query.trim())}` : "/care");
+      return;
+    }
     if (activeTab === "inspection") {
       // Open the AI booking assistant in the same in-page popup as the
       // Buy/Sell/Trade chats — no navigation to a separate page.
@@ -145,7 +159,12 @@ export default function LandingClient() {
                       disabled={tab.comingSoon}
                       aria-disabled={tab.comingSoon}
                       title={tab.comingSoon ? `${tab.label} — coming soon` : undefined}
-                      onClick={() => !tab.comingSoon && setActiveTab(tab.id)}
+                      onClick={() => {
+                        if (tab.comingSoon) return;
+                        // Care opens its own dedicated page.
+                        if (tab.id === "care") return router.push("/care");
+                        setActiveTab(tab.id);
+                      }}
                       className={[
                         "relative flex min-w-fit flex-1 items-center justify-center gap-2 whitespace-nowrap px-4 py-3.5 text-sm font-semibold transition-colors sm:px-6",
                         tab.comingSoon
@@ -283,7 +302,7 @@ export default function LandingClient() {
         />
       )}
 
-      {chatOpen && activeTab !== "inspection" && (
+      {chatOpen && activeTab !== "inspection" && activeTab !== "care" && (
         <ChatPanel
           key={sessionKey}
           intent={activeTab as TabId}
@@ -357,6 +376,14 @@ function CarIcon() {
       <path d="M3 11h18v5a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5Z" />
       <circle cx="7.5" cy="13.5" r=".6" fill="currentColor" />
       <circle cx="16.5" cy="13.5" r=".6" fill="currentColor" />
+    </svg>
+  );
+}
+
+function WrenchIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
     </svg>
   );
 }

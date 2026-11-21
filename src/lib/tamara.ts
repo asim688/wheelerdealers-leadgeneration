@@ -81,12 +81,13 @@ const splitName = (full: string): { first: string; last: string } => {
 const localPhone = (mobile: string): string => mobile.replace(/\D/g, "").replace(/^(00)?971/, "").replace(/^0/, "");
 
 export interface TamaraJob {
+  /** Sent to Tamara as order_reference_id (inspection: the job id; care: "care_<requestId>"). */
   id: string;
   jobCode: string;
   fee: number;
   currency: string;
   customerName: string;
-  customerEmail: string;
+  customerEmail: string | null;
   customerMobile: string;
   address: string | null;
   city: string | null;
@@ -95,6 +96,10 @@ export interface TamaraJob {
   model: string | null;
   year: number | null;
   customerCreatedAt?: Date | null;
+  /** Overrides for non-inspection payments (e.g. Care towing). */
+  itemName?: string;
+  description?: string;
+  returnUrls?: { success: string; failure: string; cancel: string };
 }
 
 const money = (amount: number, currency: string) => ({ amount: Number(amount.toFixed(2)), currency });
@@ -105,8 +110,8 @@ function orderItems(job: TamaraJob) {
     {
       reference_id: job.id,
       type: "Digital",
-      name: `Vehicle inspection${vehicle ? ` - ${vehicle}` : ""} (${job.jobCode})`.slice(0, 255),
-      sku: "WD-INSPECTION",
+      name: (job.itemName ?? `Vehicle inspection${vehicle ? ` - ${vehicle}` : ""} (${job.jobCode})`).slice(0, 255),
+      sku: job.itemName ? "WD-CARE" : "WD-INSPECTION",
       quantity: 1,
       unit_price: money(job.fee, job.currency),
       tax_amount: money(0, job.currency), // the fee is VAT-inclusive; Tamara's tax field is for tax added on top
@@ -130,12 +135,12 @@ export async function createTamaraCheckout(job: TamaraJob): Promise<{ url: strin
     total_amount: money(job.fee, job.currency),
     tax_amount: money(0, job.currency),
     shipping_amount: money(0, job.currency),
-    description: `The Wheeler Dealers vehicle inspection ${job.jobCode}`,
+    description: job.description ?? `The Wheeler Dealers vehicle inspection ${job.jobCode}`,
     country_code: "AE",
     locale: "en_US",
     payment_type: "PAY_BY_INSTALMENTS",
     items: orderItems(job),
-    consumer: { first_name: name.first, last_name: name.last, phone_number: localPhone(job.customerMobile), email: job.customerEmail },
+    consumer: { first_name: name.first, last_name: name.last, phone_number: localPhone(job.customerMobile), ...(job.customerEmail ? { email: job.customerEmail } : {}) },
     shipping_address: {
       first_name: name.first,
       last_name: name.last,
@@ -145,7 +150,12 @@ export async function createTamaraCheckout(job: TamaraJob): Promise<{ url: strin
       country_code: "AE",
       phone_number: localPhone(job.customerMobile),
     },
-    merchant_url: { success: ret("paid"), failure: ret("failed"), cancel: ret("cancelled"), notification: `${base}/api/inspection/pay/tamara/webhook` },
+    merchant_url: {
+      success: job.returnUrls?.success ?? ret("paid"),
+      failure: job.returnUrls?.failure ?? ret("failed"),
+      cancel: job.returnUrls?.cancel ?? ret("cancelled"),
+      notification: `${base}/api/inspection/pay/tamara/webhook`,
+    },
     platform: "The Wheeler Dealers (Next.js)",
     risk_assessment: {
       is_premium_customer: false,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyStripeWebhook } from "@/lib/payments";
 import { releasePaidJob } from "@/lib/inspection";
+import { releaseCarePayment } from "@/lib/care";
 
 export const runtime = "nodejs";
 
@@ -29,9 +30,15 @@ export async function POST(req: NextRequest) {
   const session = event.data.object as {
     id?: string;
     client_reference_id?: string;
-    metadata?: { jobId?: string };
+    metadata?: { jobId?: string; careRequestId?: string };
     payment_status?: string;
+    amount_total?: number;
   };
+  // Care towing payment (customer accepted a partner's offer).
+  if (session.metadata?.careRequestId) {
+    if (session.payment_status === "paid" && session.id) await releaseCarePayment(session.metadata.careRequestId, "stripe", session.id, session.amount_total ?? null);
+    return NextResponse.json({ received: true });
+  }
   const jobId = session.metadata?.jobId || session.client_reference_id;
   if (!jobId || session.payment_status !== "paid") {
     return NextResponse.json({ received: true });

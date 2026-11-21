@@ -20,6 +20,7 @@ const PROFILE_SELECT = {
   pocEmail: true,
   approvalStatus: true,
   active: true,
+  partnerType: true,
   bankAccountTitle: true,
   bankAccountNumber: true,
   bankIban: true,

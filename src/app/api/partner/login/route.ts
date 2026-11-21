@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     if (company.approvalStatus === "suspended") {
       return NextResponse.json({ error: "Your account is suspended. Contact The Wheeler Dealers team." }, { status: 403 });
     }
-    const res = NextResponse.json({ role: "company", redirect: "/company" });
+    const res = NextResponse.json(company.partnerType === "care" ? { role: "care_partner", redirect: "/care/partner" } : { role: "company", redirect: "/company" });
     res.cookies.set(COMPANY_COOKIE, createCompanyToken(company.id), sessionCookieOptions(SESSION_MAX_AGE));
     return res;
   }

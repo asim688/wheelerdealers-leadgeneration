@@ -14,37 +14,37 @@ datasource db {
 
 /// A captured lead from the AI search flows (Sell / Trade / Buy / Dealer).
 model Lead {
-  id          String   @id @default(cuid())
-  intent      String   @default("sell") // sell | buy | trade | dealer
+  id     String @id @default(cuid())
+  intent String @default("sell") // sell | buy | trade | dealer
 
   // Vehicle details (collected by the AI)
-  make        String?
-  model       String?
-  trim        String?
-  year        Int?
-  mileage     Int?
-  condition   String?
-  vin         String? // chassis number, read from the Mulkiya
-  engineNo    String? // engine number, read from the Mulkiya
+  make      String?
+  model     String?
+  trim      String?
+  year      Int?
+  mileage   Int?
+  condition String?
+  vin       String? // chassis number, read from the Mulkiya
+  engineNo  String? // engine number, read from the Mulkiya
 
   // Extended vehicle questionnaire (Sell flow)
-  accident        String? // No accident | Minor accident | Major accident | Structural damage | Not sure
-  serviceHistory  String? // Agency | Authorized garage | Local garage | Self-maintained | No records
-  previousOwners  Int?
-  warranty        String? // Yes | No
-  keys            String? // Two keys | One key | No keys
-  modifications   String? // Yes | No
+  accident       String? // No accident | Minor accident | Major accident | Structural damage | Not sure
+  serviceHistory String? // Agency | Authorized garage | Local garage | Self-maintained | No records
+  previousOwners Int?
+  warranty       String? // Yes | No
+  keys           String? // Two keys | One key | No keys
+  modifications  String? // Yes | No
 
   // Uploaded inspection report (AI-analysed before pricing)
   hasInspectionReport     Boolean @default(false)
-  inspectionReportScore   Float?  // overall rating 0-10
+  inspectionReportScore   Float? // overall rating 0-10
   inspectionReportSource  String? // provider name (e.g. dubizzle) or generic
   inspectionReportSummary String? // one-line AI condition summary
 
   // Contact details
-  name        String?
-  mobile      String?
-  email       String?
+  name   String?
+  mobile String?
+  email  String?
 
   // AI valuation result
   estimateMin Int?
@@ -52,14 +52,14 @@ model Lead {
   currency    String?
 
   // Free-inspection booking (Sell journey steps 9-10)
-  inspectionType String?   // home | branch | expert-chat
-  inspectionSlot String?   // Today | Tomorrow | This Weekend | <custom date>
+  inspectionType String? // home | branch | expert-chat
+  inspectionSlot String? // Today | Tomorrow | This Weekend | <custom date>
   inspectionAt   DateTime? // when the booking was made
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   // A sell/trade lead may be offered to dealers via an auction.
-  auction     Auction?
+  auction Auction?
 
   @@index([intent])
   @@index([createdAt])
@@ -67,7 +67,7 @@ model Lead {
 
 /// A car in the dealer inventory, matched against buyers in the Buy/Trade flows.
 model Car {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   make         String
   model        String
   year         Int
@@ -80,9 +80,9 @@ model Car {
   seats        Int?
   description  String?
   imageUrl     String?
-  sold         Boolean  @default(false)
+  sold         Boolean @default(false)
 
-  createdAt    DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([make])
   @@index([bodyType])
@@ -99,21 +99,21 @@ model Dealer {
   approved     Boolean  @default(false)
   createdAt    DateTime @default(now())
 
-  bids         Bid[]
+  bids Bid[]
 }
 
 /// An auction listing a seller's lead to dealers. Dealers bid; the platform
 /// takes the winning offer back to the seller to finalise.
 model Auction {
-  id        String    @id @default(cuid())
-  leadId    String    @unique
-  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  status    String    @default("open") // open | closed
-  endsAt    DateTime?
+  id           String    @id @default(cuid())
+  leadId       String    @unique
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  status       String    @default("open") // open | closed
+  endsAt       DateTime?
   winningBidId String?
-  createdAt DateTime  @default(now())
+  createdAt    DateTime  @default(now())
 
-  bids      Bid[]
+  bids Bid[]
 
   @@index([status])
 }
@@ -136,20 +136,20 @@ model Bid {
 /// classified platforms. Refreshed at most once per ~3 months (see
 /// src/lib/marketData.ts) so we never re-fetch on every valuation request.
 model MarketPrice {
-  id          String   @id @default(cuid())
-  make        String
-  model       String
-  year        Int
+  id    String @id @default(cuid())
+  make  String
+  model String
+  year  Int
 
   // Aggregated statistics from the sampled listings (display currency).
-  sampleCount Int      @default(0)
+  sampleCount Int    @default(0)
   avgPrice    Int
   minPrice    Int
   maxPrice    Int
   currency    String
 
-  source      String   @default("aggregate") // where the samples came from
-  fetchedAt   DateTime @default(now())        // last refresh timestamp
+  source    String   @default("aggregate") // where the samples came from
+  fetchedAt DateTime @default(now()) // last refresh timestamp
 
   // One cached row per vehicle key.
   @@unique([make, model, year])
@@ -161,7 +161,7 @@ model MarketPrice {
 /// valuation searches against after a VIN is decoded. Aggregated into
 /// MarketPrice for fast make/model/year lookups.
 model CarListing {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   title        String?
   make         String
   model        String?
@@ -173,9 +173,9 @@ model CarListing {
   priceAed     Int
   location     String?
   dealer       String?
-  source       String   @default("aggregate") // dubizzle | buyanycar | yallamotor
+  source       String  @default("aggregate") // dubizzle | buyanycar | yallamotor
 
-  createdAt    DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([make])
   @@index([make, model])
@@ -196,8 +196,8 @@ model CarListing {
 /// inspectors ("children"). Company admin logs in with email + password.
 model InspectionCompany {
   id           String   @id @default(cuid())
-  name         String   // company display name
-  details      String?  // free-text company description
+  name         String // company display name
+  details      String? // free-text company description
   email        String   @unique
   passwordHash String
   phone        String?
@@ -239,6 +239,14 @@ model InspectionCompany {
   // Admin approval workflow: pending | approved | suspended
   approvalStatus String @default("pending")
 
+  /// Partner type chosen at registration: inspection (vehicle inspections) | care (towing & roadside).
+  /// Only "inspection" partners receive / accept inspection jobs.
+  partnerType  String  @default("inspection")
+  /// Care partners: comma-separated services (scheduled_tow,emergency_tow,jump_start,fuel_delivery)
+  careServices String?
+  /// Care partners: comma-separated emirates covered; empty = all emirates
+  careEmirates String?
+
   // Wheeler Dealers staff member who verifies this company's reports.
   accountManagerId String?
   accountManager   AccountManager? @relation(fields: [accountManagerId], references: [id], onDelete: SetNull)
@@ -249,11 +257,13 @@ model InspectionCompany {
   verifiedByEmail String?
   verifiedByRole  String?
 
-  inspectors Inspector[]
-  jobs       InspectionJob[] @relation("CompanyJobs")
-  documents  CompanyDocument[]
-  activity   CompanyActivity[]
-  agreements CommissionAgreement[]
+  inspectors   Inspector[]
+  jobs         InspectionJob[]       @relation("CompanyJobs")
+  documents    CompanyDocument[]
+  activity     CompanyActivity[]
+  agreements   CommissionAgreement[]
+  careBids     CareBid[]
+  careAssigned CareRequest[]         @relation("CareAssignedPartner")
 
   @@index([approvalStatus])
   @@index([accountManagerId])
@@ -263,17 +273,17 @@ model InspectionCompany {
 /// (registered, approved, suspended, reinstated, activated, deactivated) with the
 /// staff member who made it.
 model CompanyActivity {
-  id        String   @id @default(cuid())
-  companyId String
-  company   InspectionCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  action    String   // registered | approved | suspended | reinstated | activated | deactivated | pending
+  id         String            @id @default(cuid())
+  companyId  String
+  company    InspectionCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  action     String // registered | approved | suspended | reinstated | activated | deactivated | pending
   actorName  String?
   actorEmail String?
-  actorRole  String?  // super_admin | account_manager | company
+  actorRole  String? // super_admin | account_manager | company
   ip         String?
   userAgent  String?
   note       String?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime          @default(now())
 
   @@index([companyId, createdAt])
 }
@@ -281,16 +291,16 @@ model CompanyActivity {
 /// Registration documents (trade licence, VAT certificate, extras). Stored in the
 /// DB, not public blob storage, and only served to admin through an authenticated route.
 model CompanyDocument {
-  id        String   @id @default(cuid())
+  id        String            @id @default(cuid())
   companyId String
   company   InspectionCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  kind      String   // trade_license | vat_certificate | iban_letter | other
-  label     String?  // free-text title for kind=other
+  kind      String // trade_license | vat_certificate | iban_letter | other
+  label     String? // free-text title for kind=other
   fileName  String
   mimeType  String
   sizeBytes Int
   data      Bytes
-  createdAt DateTime @default(now())
+  createdAt DateTime          @default(now())
 
   @@index([companyId])
 }
@@ -317,13 +327,13 @@ model Inspector {
   tradeLicense  String?
   areas         String? // comma-separated emirates/cities covered
   services      String? // comma-separated inspection services offered
-  bankName     String?
-  bankIban     String?
+  bankName      String?
+  bankIban      String?
 
   // Admin approval workflow: pending | approved | suspended
   approvalStatus String @default("approved")
 
-  jobs         InspectionJob[]
+  jobs InspectionJob[]
 
   @@index([approvalStatus])
   @@index([companyId])
@@ -331,15 +341,17 @@ model Inspector {
 
 /// A customer account. Login is required before booking (mobile OTP).
 model Customer {
-  id        String   @id @default(cuid())
-  mobile    String   @unique // verified by the OTP login itself
-  name      String?
-  email     String?  // only ever set through email verification
+  id              String    @id @default(cuid())
+  mobile          String    @unique // verified by the OTP login itself
+  name            String?
+  email           String? // only ever set through email verification
   emailVerifiedAt DateTime?
-  createdAt DateTime @default(now())
-  lastLogin DateTime?
+  createdAt       DateTime  @default(now())
+  lastLogin       DateTime?
 
-  jobs InspectionJob[]
+  jobs         InspectionJob[]
+  careRequests CareRequest[]
+  careOrders   CareOrder[]
 }
 
 /// One-time passwords for customer mobile login. Verified codes are deleted;
@@ -347,7 +359,7 @@ model Customer {
 model OtpCode {
   id        String   @id @default(cuid())
   mobile    String
-  codeHash  String   // scrypt hash of the 6-digit code
+  codeHash  String // scrypt hash of the 6-digit code
   expiresAt DateTime
   attempts  Int      @default(0)
   createdAt DateTime @default(now())
@@ -377,15 +389,15 @@ model AccountManager {
 /// Audit trail of the report review: submissions, reviewer edits, returns to
 /// the inspector and approvals (who did what, when).
 model ReportActivity {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   jobId     String
   job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  action    String   // submitted | edited | returned | approved
-  detail    String?  // human-readable summary (e.g. field changes, return note)
-  actorType String   // inspector | manager | admin
+  action    String // submitted | edited | returned | approved
+  detail    String? // human-readable summary (e.g. field changes, return note)
+  actorType String // inspector | manager | admin
   actorId   String?
   actorName String?
-  createdAt DateTime @default(now())
+  createdAt DateTime      @default(now())
 
   @@index([jobId, createdAt])
 }
@@ -395,9 +407,9 @@ model ReportActivity {
 /// Message Central keep "mc:<verificationId>" in codeHash.
 model VerificationCode {
   id        String   @id @default(cuid())
-  channel   String   // sms | email
-  target    String   // +9715XXXXXXXX or lower-cased email
-  codeHash  String   // "salt:scrypt" or "mc:<verificationId>"
+  channel   String // sms | email
+  target    String // +9715XXXXXXXX or lower-cased email
+  codeHash  String // "salt:scrypt" or "mc:<verificationId>"
   ip        String?
   expiresAt DateTime
   attempts  Int      @default(0)
@@ -417,12 +429,12 @@ model PlatformSetting {
 /// A customer-booked vehicle inspection job. Created by the public booking
 /// wizard, assigned to an inspector by admin, then carried out and reported.
 model InspectionJob {
-  id        String   @id @default(cuid())
-  jobCode   String   @unique // human-friendly, e.g. WD-260722-0015
+  id      String @id @default(cuid())
+  jobCode String @unique // human-friendly, e.g. WD-260722-0015
   // Marketplace lifecycle:
   // payment_pending → available → accepted → in_progress → report_submitted → completed
   // (cancelled possible at any point; legacy values open/assigned map to available/accepted)
-  status    String   @default("payment_pending")
+  status  String @default("payment_pending")
 
   // Public, unguessable token for the customer-facing report link.
   reportToken String? @unique
@@ -459,8 +471,8 @@ model InspectionJob {
 
   // Online payment (provider-ready Stripe; auto-paid when no keys configured)
   paymentStatus   String    @default("pending") // pending | paid | waived
-  paymentProvider String?   // stripe | dev-auto | manual
-  paymentRef      String?   // e.g. Stripe checkout session id
+  paymentProvider String? // stripe | dev-auto | manual
+  paymentRef      String? // e.g. Stripe checkout session id
   paidAt          DateTime?
 
   // Partner economics — snapshotted at acceptance so later admin pricing
@@ -511,12 +523,12 @@ model InspectionJob {
 /// Materialised from the checklist template when the inspector starts the job,
 /// so every point has a stable unique id for answers and photos.
 model InspectionItem {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   jobId     String
   job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  section   String   // e.g. "Tyres"
-  itemKey   String   // stable key from the template (e.g. "tyres.fl")
-  label     String   // human label
+  section   String // e.g. "Tyres"
+  itemKey   String // stable key from the template (e.g. "tyres.fl")
+  label     String // human label
   // Neutral observation chosen by the inspector, e.g. "No obvious issue
   // observed" | "Wear or damage observed" | "Not assessed / unavailable"
   // (paint panels: Original paint | Repainted | Panel replaced). Jobs from
@@ -526,9 +538,9 @@ model InspectionItem {
   // Structured measurements, e.g. { dotWeek, dotYear, treadMm } for tyres or
   // { thicknessUm } for body panels.
   value     Json?
-  order     Int      @default(0)
+  order     Int           @default(0)
 
-  photos    InspectionPhoto[]
+  photos InspectionPhoto[]
 
   @@unique([jobId, itemKey])
   @@index([jobId])
@@ -536,14 +548,14 @@ model InspectionItem {
 
 /// A photo attached to a job (optionally to a specific inspection item).
 model InspectionPhoto {
-  id        String   @id @default(cuid())
+  id        String          @id @default(cuid())
   jobId     String
   job       InspectionJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
   itemId    String?
   item      InspectionItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
   url       String
   caption   String?
-  createdAt DateTime @default(now())
+  createdAt DateTime        @default(now())
 
   @@index([jobId])
   @@index([itemId])
@@ -551,13 +563,13 @@ model InspectionPhoto {
 
 /// The generated report for a completed inspection.
 model InspectionReport {
-  id              String   @id @default(cuid())
-  jobId           String   @unique
+  id              String        @id @default(cuid())
+  jobId           String        @unique
   job             InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   // Section 12 — diagnostic scan and inspector comments (facts only).
-  summary         String?  // additional observations
-  diagnosticScan  String?  // diagnostic scan history / fault codes found
-  limitations     String?  // components not checked / not accessible and why
+  summary         String? // additional observations
+  diagnosticScan  String? // diagnostic scan history / fault codes found
+  limitations     String? // components not checked / not accessible and why
   // Legacy (pre Oct 2026). The report no longer scores, grades or recommends;
   // these stay nullable so historic rows still load.
   recommendations String?
@@ -565,23 +577,22 @@ model InspectionReport {
   verdict         String?
   // Section 01 — recorded at inspection time (vehicle identification table)
   odometerKm      Int?
-  odometerStatus  String?  // odometer authenticity wording, e.g. "No indication of alteration observed"
+  odometerStatus  String? // odometer authenticity wording, e.g. "No indication of alteration observed"
   exteriorColor   String?
-  regionalSpecs   String?  // GCC | American | Japanese | European | Korean | Other
-  engineConfig    String?  // e.g. "4-cylinder"
+  regionalSpecs   String? // GCC | American | Japanese | European | Korean | Other
+  engineConfig    String? // e.g. "4-cylinder"
   keysCount       Int?
-  spareTyre       String?  // Available | Not available | Repair kit
+  spareTyre       String? // Available | Not available | Repair kit
   // Wheeler Dealers verification (account manager / super admin) before the
   // report is released to the customer with the red verification stamp.
   verifiedAt      DateTime?
-  verifiedById    String?  // AccountManager id, or "admin"
+  verifiedById    String? // AccountManager id, or "admin"
   verifiedByName  String?
   returnedAt      DateTime? // set while the report is back with the inspector
   returnNote      String?
-  generatedAt     DateTime @default(now())
+  generatedAt     DateTime      @default(now())
   sentAt          DateTime?
 }
-
 
 // ── Payment Management (Phase 1) ─────────────────────────────────────────────
 // All money below is stored as integer fils (1 AED = 100 fils); never floats.
@@ -589,20 +600,20 @@ model InspectionReport {
 /// A company's commission agreement. Every change is a new row (the previous
 /// active row becomes "superseded"), so the table itself is the change history.
 model CommissionAgreement {
-  id             String   @id @default(cuid())
-  companyId      String
-  company        InspectionCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  type           String   // percentage | fixed
+  id            String            @id @default(cuid())
+  companyId     String
+  company       InspectionCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type          String // percentage | fixed
   /// percentage → basis points (1500 = 15.00%); fixed → fils (5000 = AED 50.00)
-  value          Int
-  status         String   @default("active") // active | superseded
-  previousType   String?
-  previousValue  Int?
-  note           String?
-  createdById    String?
-  createdByName  String?
-  createdByRole  String?  // admin | account_manager
-  createdAt      DateTime @default(now())
+  value         Int
+  status        String            @default("active") // active | superseded
+  previousType  String?
+  previousValue Int?
+  note          String?
+  createdById   String?
+  createdByName String?
+  createdByRole String? // admin | account_manager
+  createdAt     DateTime          @default(now())
 
   @@index([companyId, createdAt])
 }
@@ -610,38 +621,38 @@ model CommissionAgreement {
 /// One row per paid inspection job: the money split and the partner payout state.
 /// The commission fields are an immutable snapshot taken when a company accepts.
 model JobPayment {
-  id        String   @id @default(cuid())
-  jobId     String   @unique
+  id        String        @id @default(cuid())
+  jobId     String        @unique
   job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   companyId String?
-  currency  String   @default("AED")
+  currency  String        @default("AED")
 
-  grossFils Int      // what the customer paid, VAT included
-  vatFils   Int      // 5% VAT contained in the gross amount
-  netFils   Int      // gross - VAT
+  grossFils Int // what the customer paid, VAT included
+  vatFils   Int // 5% VAT contained in the gross amount
+  netFils   Int // gross - VAT
 
   agreementId     String?
-  commissionType  String?  // snapshot: percentage | fixed
-  commissionValue Int?     // snapshot: bp or fils
-  commissionFils  Int?     // WD commission (excl. VAT)
-  partnerFils     Int?     // paid to the inspection company
+  commissionType  String? // snapshot: percentage | fixed
+  commissionValue Int? // snapshot: bp or fils
+  commissionFils  Int? // WD commission (excl. VAT)
+  partnerFils     Int? // paid to the inspection company
   snapshotAt      DateTime?
 
-  paymentStatus String   @default("received") // received | refund_requested | partially_refunded | refunded
-  refundedFils  Int      @default(0)
+  paymentStatus String @default("received") // received | refund_requested | partially_refunded | refunded
+  refundedFils  Int    @default(0)
 
   // not_eligible → pending → (due, derived once eligibleAt passes) → paid; on_hold by Admin
-  payoutStatus  String    @default("not_eligible")
-  eligibleAt    DateTime? // report delivered + 3 hours
-  paidAt        DateTime?
-  payoutRef     String?   // bank transfer reference
-  paidByName    String?
-  holdReason    String?
-  heldByName    String?
-  heldAt        DateTime?
+  payoutStatus String    @default("not_eligible")
+  eligibleAt   DateTime? // report delivered + 3 hours
+  paidAt       DateTime?
+  payoutRef    String? // bank transfer reference
+  paidByName   String?
+  holdReason   String?
+  heldByName   String?
+  heldAt       DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
   events    PaymentEvent[]
 
   @@index([companyId, payoutStatus])
@@ -650,43 +661,43 @@ model JobPayment {
 
 /// Immutable audit trail of everything that happens to a payment.
 model PaymentEvent {
-  id         String   @id @default(cuid())
-  paymentId  String
-  payment    JobPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  type       String   // created | snapshot | eligible | hold | release | paid | refund_requested | refund
-  actorName  String?
-  actorRole  String?  // admin | account_manager | system | customer
-  detail     String?
-  createdAt  DateTime @default(now())
+  id        String     @id @default(cuid())
+  paymentId String
+  payment   JobPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  type      String // created | snapshot | eligible | hold | release | paid | refund_requested | refund
+  actorName String?
+  actorRole String? // admin | account_manager | system | customer
+  detail    String?
+  createdAt DateTime   @default(now())
 
   @@index([paymentId, createdAt])
 }
 
 /// Staff login for the Super Admin side (created by an Admin).
 model AdminUser {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  active       Boolean  @default(true)
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String
+  active        Boolean   @default(true)
   createdByName String?
-  createdAt    DateTime @default(now())
-  lastLoginAt  DateTime?
+  createdAt     DateTime  @default(now())
+  lastLoginAt   DateTime?
 }
 
 /// Refund of a customer payment. Admin only; full = the amount collected, or a manual partial amount.
 model PaymentRefund {
-  id          String   @id @default(cuid())
-  paymentId   String
-  amountFils  Int
-  kind        String   // full | partial
-  reason      String?
-  status      String   @default("requested") // requested | done | rejected
-  reference   String?  // Stripe refund id / note
-  requestedBy String?  // customer | admin name
+  id              String    @id @default(cuid())
+  paymentId       String
+  amountFils      Int
+  kind            String // full | partial
+  reason          String?
+  status          String    @default("requested") // requested | done | rejected
+  reference       String? // Stripe refund id / note
+  requestedBy     String? // customer | admin name
   processedByName String?
-  createdAt   DateTime @default(now())
-  processedAt DateTime?
+  createdAt       DateTime  @default(now())
+  processedAt     DateTime?
 
   @@index([paymentId])
 }
@@ -694,21 +705,180 @@ model PaymentRefund {
 /// UAE tax invoice issued to the customer when their payment is received.
 /// The invoice number is derived from `seq` (gapless per successful insert).
 model TaxInvoice {
-  id            String   @id @default(cuid())
-  seq           Int      @unique @default(autoincrement())
-  token         String   @unique @default(cuid()) // unguessable public download link
-  jobId         String   @unique
-  job           InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id    String        @id @default(cuid())
+  seq   Int           @unique @default(autoincrement())
+  token String        @unique @default(cuid()) // unguessable public download link
+  jobId String        @unique
+  job   InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  issuedAt      DateTime @default(now())
+  issuedAt      DateTime  @default(now())
   supplyDate    DateTime // date the payment was received / service supplied
   customerName  String
   customerEmail String
   description   String
-  currency      String   @default("AED")
+  currency      String    @default("AED")
   grossFils     Int
   vatFils       Int
   netFils       Int
   emailedAt     DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+// ─── Care module ─────────────────────────────────────────────────────────────
+// Roadside assistance (WD-managed dispatch), scheduled towing (reverse bidding)
+// and a priced car-care catalogue. Money is stored in fils (AED x 100).
+
+/// A customer request: roadside (WD assigns a partner) or scheduled tow (partners bid).
+model CareRequest {
+  id      String @id @default(cuid())
+  code    String @unique // e.g. WD-CARE-261120-0001
+  kind    String // roadside | towing
+  service String // jump_start | emergency_tow | fuel_delivery | scheduled_tow
+  /// roadside: submitted → reviewing → assigned → en_route → completed | cancelled
+  /// towing:   open → offer_accepted → confirmed → in_progress → completed | cancelled
+  status  String
+
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerName   String
+  customerMobile String
+  customerEmail  String?
+
+  make      String?
+  model     String?
+  year      Int?
+  condition String? // runs | not_starting | accident | flat_tyre | other
+  issue     String? // short problem description / safety notes
+
+  pickupAddress String
+  pickupEmirate String?
+  pickupLat     Float?
+  pickupLng     Float?
+  destAddress   String?
+  destEmirate   String?
+  destLat       Float?
+  destLng       Float?
+
+  fuelType   String? // petrol_special | petrol_super | diesel
+  fuelLitres Int?
+
+  scheduledAt DateTime?
+  flexible    Boolean   @default(false)
+  bidsCloseAt DateTime?
+
+  /// Roadside: partner + quote set by WD. Towing: copied from the accepted bid.
+  assignedPartnerId String?
+  assignedPartner   InspectionCompany? @relation("CareAssignedPartner", fields: [assignedPartnerId], references: [id], onDelete: SetNull)
+  priceFils         Int?
+  etaMinutes        Int?
+  acceptedBidId     String?
+  /// Partner reconfirmed a different ETA after award; customer must approve before confirmation.
+  etaChangePending  Boolean            @default(false)
+
+  /// Roadside: pay_on_site → collected_on_site. Towing (paid online when the customer accepts a bid):
+  /// none → pending → paid. Refunds are tracked separately below so a later payment never hides one.
+  paymentStatus   String    @default("none")
+  paymentProvider String? // stripe | tamara | dev-auto | on_site
+  paymentRef      String?
+  paidFils        Int?
+  paidAt          DateTime?
+  pendingBidId    String? // bid the customer is paying for right now
+  pendingSince    DateTime?
+  /// none | due | refunded — money WD owes back to the customer on this request (any earlier payments)
+  refundStatus    String    @default("none")
+  refundFils      Int       @default(0)
+  refundRef       String?
+
+  adminNote    String?
+  cancelReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bids   CareBid[]
+  events CareEvent[]
+
+  @@index([kind, status, createdAt])
+  @@index([customerId, createdAt])
+}
+
+/// A partner's offer on a scheduled-tow request. Price is VAT-inclusive; ETA = minutes to reach pickup.
+model CareBid {
+  id                  String            @id @default(cuid())
+  requestId           String
+  request             CareRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  partnerId           String
+  partner             InspectionCompany @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  priceFils           Int
+  etaMinutes          Int
+  pickupAt            DateTime?
+  terms               String?
+  status              String            @default("active") // active | withdrawn | accepted | rejected
+  confirmedEtaMinutes Int?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@unique([requestId, partnerId])
+  @@index([partnerId, status])
+}
+
+/// Immutable history of a care request.
+model CareEvent {
+  id        String      @id @default(cuid())
+  requestId String
+  request   CareRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  type      String
+  actorName String?
+  actorRole String? // customer | admin | partner | system
+  detail    String?
+  createdAt DateTime    @default(now())
+
+  @@index([requestId, createdAt])
+}
+
+/// Car batteries, oil & filters and accessories with VAT-inclusive prices.
+model CareProduct {
+  id            String   @id @default(cuid())
+  category      String // battery | oil | accessory
+  name          String
+  brand         String?
+  description   String?
+  imageUrl      String?
+  priceFils     Int // VAT inclusive
+  installFils   Int? // optional installation charge (VAT inclusive)
+  deliveryFils  Int? // optional delivery charge (VAT inclusive)
+  /// One rule per line: "Toyota Corolla 2015-2022", "Nissan", "Honda Civic". Empty = fits all vehicles.
+  compatibility String?
+  inStock       Boolean  @default(true)
+  active        Boolean  @default(true)
+  sample        Boolean  @default(false) // demo catalogue item
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category, active])
+}
+
+/// A product order placed from the Care catalogue.
+model CareOrder {
+  id             String    @id @default(cuid())
+  code           String    @unique // e.g. WD-ORD-261120-0001
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerName   String
+  customerMobile String
+  customerEmail  String?
+  /// [{ productId, name, brand, qty, unitFils, installFils }]
+  items          Json
+  fulfilment     String // delivery | installation
+  address        String
+  emirate        String?
+  vehicle        String?
+  subtotalFils   Int
+  chargesFils    Int
+  totalFils      Int // VAT inclusive
+  status         String    @default("placed") // placed | confirmed | out_for_delivery | completed | cancelled
+  adminNote      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, createdAt])
 }

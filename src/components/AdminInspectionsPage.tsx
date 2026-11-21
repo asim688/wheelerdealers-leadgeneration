@@ -7,6 +7,7 @@ import AdminInspectionsPanel, { AccountManagersPanel, STATUS_TABS } from "./Admi
 import AdminCompaniesList from "./AdminCompaniesList";
 import AdminPaymentsPanel from "./AdminPaymentsPanel";
 import AdminUsersPanel from "./AdminUsersPanel";
+import AdminCarePanel from "./AdminCarePanel";
 import { LoginForm } from "./AdminDashboard";
 
 /**
@@ -16,7 +17,7 @@ import { LoginForm } from "./AdminDashboard";
  * The old summary cards and status chips at the top are gone.
  */
 
-export type Section = "jobs" | "companies" | "managers" | "payments" | "users";
+export type Section = "jobs" | "companies" | "managers" | "payments" | "users" | "care";
 
 export default function AdminInspectionsPage({ initialSection = "jobs" }: { initialSection?: Section }) {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -117,6 +118,9 @@ export default function AdminInspectionsPage({ initialSection = "jobs" }: { init
           <NavItem active={section === "users"} onClick={() => go("users")}>
             5. User Management
           </NavItem>
+          <NavItem active={section === "care"} onClick={() => go("care")}>
+            6. Care
+          </NavItem>
         </nav>
       </aside>
 
@@ -156,6 +160,7 @@ export default function AdminInspectionsPage({ initialSection = "jobs" }: { init
             </>
           )}
           {section === "users" && <AdminUsersPanel onUnauthorized={onUnauthorized} />}
+          {section === "care" && <AdminCarePanel onUnauthorized={onUnauthorized} />}
         </main>
       </div>
     </div>

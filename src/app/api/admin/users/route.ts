@@ -5,6 +5,7 @@ import { getAdminIdentity } from "@/lib/adminIdentity";
 import { normaliseEmail, normaliseUaeMobile } from "@/lib/contactValidation";
 import { sendCompanyWelcomeEmail, sendInspectorAddedEmail, sendManagerAddedEmail } from "@/lib/companyCompliance";
 import { logCompanyActivity } from "@/lib/adminCompany";
+import { parseCarePartnerInput } from "@/lib/care";
 
 export const runtime = "nodejs";
 
@@ -47,20 +48,21 @@ export async function GET(req: NextRequest) {
   const rows: Row[] = [
     ...admins.map((u): Row => ({ id: u.id, role: "admin", name: u.name, email: u.email, phone: null, active: u.active, status: u.active ? "active" : "inactive", detail: u.createdByName ? `created by ${u.createdByName}` : "", createdAt: u.createdAt.toISOString() })),
     ...managers.map((u): Row => ({ id: u.id, role: "account_manager", name: u.name, email: u.email, phone: u.phone, active: u.active, status: !u.active ? "inactive" : u.emailVerifiedAt && u.phoneVerifiedAt ? "active" : "unverified", detail: `${u._count.companies} companies`, createdAt: u.createdAt.toISOString() })),
-    ...companies.map((u): Row => ({ id: u.id, role: "company", name: u.name, email: u.email, phone: u.phone, active: u.active, status: !u.active ? "inactive" : u.approvalStatus, detail: `${u._count.inspectors} inspectors`, companyId: u.id, createdAt: u.createdAt.toISOString() })),
+    ...companies.map((u): Row => ({ id: u.id, role: "company", name: u.name, email: u.email, phone: u.phone, active: u.active, status: !u.active ? "inactive" : u.approvalStatus, detail: u.partnerType === "care" ? "Care partner (towing & roadside)" : `${u._count.inspectors} inspectors`, companyId: u.id, createdAt: u.createdAt.toISOString() })),
     ...inspectors.map((u): Row => ({ id: u.id, role: "inspector", name: u.name, email: u.email, phone: u.phone, active: u.active, status: !u.active ? "inactive" : u.emailVerifiedAt && u.phoneVerifiedAt ? "active" : "unverified", detail: u.company?.name ?? "No company", companyId: u.company?.id ?? null, createdAt: u.createdAt.toISOString() })),
   ]
     .filter((r) => !q || [r.name, r.email, r.phone ?? "", r.detail].some((v) => v.toLowerCase().includes(q)))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-  const companyOptions = await prisma.inspectionCompany.findMany({ where: { approvalStatus: "approved" }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const companyOptions = await prisma.inspectionCompany.findMany({ where: { approvalStatus: "approved", partnerType: "inspection" }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   return NextResponse.json({ users: rows, companies: companyOptions });
 }
 
 /**
  * POST /api/admin/users   Admin only — create a login for any role:
  *   admin / account_manager / inspector: { role, name, email, password, phone?(required for manager+inspector), companyId? (inspector), companyIds? (manager) }
- *   company: { role, name, email, password, phone, pocName, pocMobile, pocEmail, city?, emirate? }
+ *   company: { role, name, email, password, phone, pocName, pocMobile, pocEmail, city?, emirate?,
+ *              partnerType? ("inspection" | "care"), careServices?[], careEmirates?[] (care partners) }
  * Companies created here are approved straight away, but still cannot accept jobs until their payout details
  * and a commission are set. Managers and inspectors verify their own email + mobile at first sign-in.
  */
@@ -104,8 +106,8 @@ export async function POST(req: NextRequest) {
 
   if (role === "inspector") {
     const companyId = str(body.companyId, 60);
-    const company = companyId ? await prisma.inspectionCompany.findUnique({ where: { id: companyId }, select: { id: true, name: true } }) : null;
-    if (!company) return NextResponse.json({ error: "Choose the inspection company this inspector works for." }, { status: 400 });
+    const company = companyId ? await prisma.inspectionCompany.findUnique({ where: { id: companyId }, select: { id: true, name: true, partnerType: true } }) : null;
+    if (!company || company.partnerType !== "inspection") return NextResponse.json({ error: "Choose the inspection company this inspector works for." }, { status: 400 });
     const i = await prisma.inspector.create({
       data: { name, email, phone, passwordHash: hashPassword(password), companyId: company.id, approvalStatus: "approved" },
       select: { id: true, name: true, email: true },
@@ -121,10 +123,13 @@ export async function POST(req: NextRequest) {
   if (!pocName || !pocMobile || !pocEmail) {
     return NextResponse.json({ error: "Enter the contact person's name, UAE mobile and email (they get the job alerts)." }, { status: 400 });
   }
+  const partner = parseCarePartnerInput(body);
+  if (!partner.ok) return NextResponse.json({ error: partner.error }, { status: 400 });
   const c = await prisma.inspectionCompany.create({
     data: {
       name, email, phone, passwordHash: hashPassword(password),
       pocName, pocMobile, pocEmail,
+      ...partner.data,
       city: str(body.city) || null, emirate: str(body.emirate) || null,
       approvalStatus: "approved",
       verifiedAt: new Date(), verifiedByName: who.name, verifiedByEmail: who.email, verifiedByRole: "super_admin",

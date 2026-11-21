@@ -12,6 +12,7 @@ import {
 } from "@/lib/contactValidation";
 import { sendApplicationReceivedEmail } from "@/lib/companyCompliance";
 import { esc } from "@/lib/emailTemplates";
+import { parseCarePartnerInput } from "@/lib/care";
 
 export const runtime = "nodejs";
 
@@ -60,6 +61,9 @@ export async function POST(req: NextRequest) {
     bankName?: string;
     bankBranch?: string;
     proofs?: unknown;
+    partnerType?: string;
+    careServices?: unknown;
+    careEmirates?: unknown;
   };
   try {
     body = await req.json();
@@ -121,6 +125,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const partner = parseCarePartnerInput(body as Record<string, unknown>);
+  if (!partner.ok) return NextResponse.json({ error: partner.error }, { status: 400 });
+
   // Every contact must be verified by its owner (one proof covers a value used twice).
   const proven = readVerificationProofs(body.proofs);
   const unverified: string[] = [];
@@ -168,6 +175,7 @@ export async function POST(req: NextRequest) {
       pocEmailVerifiedAt: now,
       pocMobileVerifiedAt: now,
       approvalStatus: "pending",
+      ...partner.data,
     },
   });
 
@@ -183,8 +191,8 @@ export async function POST(req: NextRequest) {
   await Promise.allSettled([
     sendEmail(
       getAdminEmail(),
-      `New inspection company application — ${company.name}`,
-      `<p>A new inspection company applied to join the marketplace (email and mobiles verified):</p>
+      `New ${company.partnerType === "care" ? "Care (towing & roadside) partner" : "inspection company"} application — ${company.name}`,
+      `<p>A new ${company.partnerType === "care" ? `Care partner (${esc(company.careServices ?? "")})` : "inspection company"} applied to join the marketplace (email and mobiles verified):</p>
 <ul>
   <li><b>Company:</b> ${esc(company.name)}</li>
   <li><b>Email:</b> ${esc(company.email)} ✓</li>

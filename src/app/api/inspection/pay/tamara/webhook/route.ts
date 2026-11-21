@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { settleTamaraOrder, verifyTamaraToken } from "@/lib/tamara";
 import { releasePaidJob } from "@/lib/inspection";
+import { releaseCarePayment } from "@/lib/care";
+import { careRequestIdFromRef, careTamaraJob } from "@/lib/careBilling";
 
 export const runtime = "nodejs";
 
@@ -28,6 +30,18 @@ export async function POST(req: NextRequest) {
 
   if (!["order_approved", "order_authorised", "order_captured"].includes(body.event_type ?? "")) {
     return NextResponse.json({ received: true });
+  }
+
+  // Care towing payment: order_reference_id = care_<requestId>_<attempt>.
+  const careId = careRequestIdFromRef(jobId);
+  if (careId) {
+    const r = await prisma.careRequest.findUnique({ where: { id: careId } });
+    if (!r || r.paymentStatus !== "pending" || r.paymentRef !== orderId || !r.pendingBidId) return NextResponse.json({ received: true });
+    const bid = await prisma.careBid.findUnique({ where: { id: r.pendingBidId }, include: { partner: { select: { name: true } } } });
+    if (!bid) return NextResponse.json({ received: true });
+    const status = await settleTamaraOrder(orderId, careTamaraJob(r, { priceFils: bid.priceFils, partnerName: bid.partner.name }, jobId));
+    if (status) await releaseCarePayment(r.id, "tamara", orderId);
+    return NextResponse.json({ received: true, status });
   }
 
   const job = await prisma.inspectionJob.findUnique({

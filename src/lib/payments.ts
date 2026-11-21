@@ -25,13 +25,17 @@ export function isStripeConfigured(): boolean {
  * payment URL, or null if Stripe isn't configured or the call fails (callers
  * fall back to dev auto-approval).
  */
-export async function createCheckoutSession(job: {
-  id: string;
-  jobCode: string;
-  fee: number;
-  currency: string;
-  customerEmail: string;
-}): Promise<{ url: string; sessionId: string } | null> {
+export async function createCheckoutSession(
+  job: {
+    id: string;
+    jobCode: string;
+    fee: number;
+    currency: string;
+    customerEmail: string | null;
+  },
+  /** Overrides for non-inspection payments (e.g. Care towing). */
+  opts?: { productName?: string; successUrl?: string; cancelUrl?: string; metadata?: Record<string, string> },
+): Promise<{ url: string; sessionId: string } | null> {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) return null;
 
@@ -42,15 +46,14 @@ export async function createCheckoutSession(job: {
     "payment_method_types[0]": "card",
     "line_items[0][price_data][currency]": job.currency.toLowerCase(),
     "line_items[0][price_data][unit_amount]": String(Math.round(job.fee * 100)),
-    "line_items[0][price_data][product_data][name]": `Vehicle Inspection — ${job.jobCode}`,
+    "line_items[0][price_data][product_data][name]": opts?.productName ?? `Vehicle Inspection — ${job.jobCode}`,
     "line_items[0][quantity]": "1",
-    customer_email: job.customerEmail,
     client_reference_id: job.id,
-    "metadata[jobId]": job.id,
-    "metadata[jobCode]": job.jobCode,
-    success_url: `${base}/inspection/book?paid=1&job=${encodeURIComponent(job.jobCode)}&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${base}/inspection/book?cancelled=1&job=${encodeURIComponent(job.jobCode)}`,
+    success_url: opts?.successUrl ?? `${base}/inspection/book?paid=1&job=${encodeURIComponent(job.jobCode)}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: opts?.cancelUrl ?? `${base}/inspection/book?cancelled=1&job=${encodeURIComponent(job.jobCode)}`,
   });
+  if (job.customerEmail) params.set("customer_email", job.customerEmail);
+  for (const [k, v] of Object.entries(opts?.metadata ?? { jobId: job.id, jobCode: job.jobCode })) params.set(`metadata[${k}]`, v);
 
   try {
     const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
@@ -82,7 +85,8 @@ export async function createCheckoutSession(job: {
 export async function retrieveCheckoutSession(sessionId: string): Promise<{
   id: string;
   payment_status?: string;
-  metadata?: { jobId?: string };
+  amount_total?: number;
+  metadata?: { jobId?: string; careRequestId?: string };
 } | null> {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key || !/^cs_[a-zA-Z0-9_]+$/.test(sessionId)) return null;
@@ -92,7 +96,7 @@ export async function retrieveCheckoutSession(sessionId: string): Promise<{
       { headers: { Authorization: `Bearer ${key}` } },
     );
     if (!res.ok) return null;
-    return (await res.json()) as { id: string; payment_status?: string; metadata?: { jobId?: string } };
+    return (await res.json()) as { id: string; payment_status?: string; amount_total?: number; metadata?: { jobId?: string; careRequestId?: string } };
   } catch {
     return null;
   }

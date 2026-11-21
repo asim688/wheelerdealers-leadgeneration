@@ -191,20 +191,34 @@ export default function AdminUsersPanel({ onUnauthorized }: { onUnauthorized: ()
   );
 }
 
-function CreateDialog({
+const CARE_SERVICE_OPTIONS = [
+  ["scheduled_tow", "Scheduled towing (bidding)"],
+  ["emergency_tow", "Emergency towing"],
+  ["jump_start", "Battery jump start"],
+  ["fuel_delivery", "Fuel delivery"],
+] as const;
+const ALL_EMIRATES = ["Dubai", "Abu Dhabi", "Sharjah", "Ajman", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain"];
+
+export function CreateDialog({
   companies,
   defaultRole,
+  defaultPartnerType = "inspection",
   onClose,
   onCreated,
   onUnauthorized,
 }: {
   companies: Array<{ id: string; name: string }>;
   defaultRole: Role;
+  defaultPartnerType?: "inspection" | "care";
   onClose: () => void;
   onCreated: (msg: string) => Promise<void>;
   onUnauthorized: () => void;
 }) {
   const [role, setRole] = useState<Role>(defaultRole);
+  const [partnerType, setPartnerType] = useState<"inspection" | "care">(defaultPartnerType);
+  const [careServices, setCareServices] = useState<string[]>(defaultPartnerType === "care" ? ["scheduled_tow"] : []);
+  const [careEmirates, setCareEmirates] = useState<string[]>([]);
+  const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const [f, setF] = useState({ name: "", email: "", phone: "", password: "", companyId: "", pocName: "", pocMobile: "", pocEmail: "", city: "", emirate: "" });
   const [companyIds, setCompanyIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -221,7 +235,7 @@ function CreateDialog({
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, ...f, companyIds: role === "account_manager" ? companyIds : undefined }),
+        body: JSON.stringify({ role, ...f, companyIds: role === "account_manager" ? companyIds : undefined, ...(role === "company" ? { partnerType, careServices, careEmirates } : {}) }),
       });
       if (res.status === 401) return onUnauthorized();
       const d = await res.json().catch(() => ({}));
@@ -266,6 +280,30 @@ function CreateDialog({
 
           {role === "company" && (
             <>
+              <select value={partnerType} onChange={(e) => setPartnerType(e.target.value as "inspection" | "care")} className={input} aria-label="Partner type">
+                <option value="inspection">Partner type: Vehicle Inspection company</option>
+                <option value="care">Partner type: Towing &amp; Roadside (Care partner)</option>
+              </select>
+              {partnerType === "care" && (
+                <div className="space-y-2 rounded-lg bg-neutral-50 p-3">
+                  <p className="text-xs font-semibold text-neutral-600">Care services *</p>
+                  <div className="flex flex-wrap gap-2">
+                    {CARE_SERVICE_OPTIONS.map(([id, text]) => (
+                      <button key={id} type="button" onClick={() => setCareServices((c) => toggle(c, id))} className={`rounded-full border px-3 py-1 text-xs font-medium ${careServices.includes(id) ? "border-red-600 bg-red-50 text-red-700" : "border-neutral-300 text-neutral-600"}`}>
+                        {careServices.includes(id) ? "✓ " : ""}{text}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs font-semibold text-neutral-600">Emirates covered <span className="font-normal text-neutral-400">(none = all)</span></p>
+                  <div className="flex flex-wrap gap-2">
+                    {ALL_EMIRATES.map((em) => (
+                      <button key={em} type="button" onClick={() => setCareEmirates((c) => toggle(c, em))} className={`rounded-full border px-3 py-1 text-xs font-medium ${careEmirates.includes(em) ? "border-red-600 bg-red-50 text-red-700" : "border-neutral-300 text-neutral-600"}`}>
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <p className="pt-1 text-xs font-bold uppercase tracking-wide text-neutral-400">Point of contact (gets job alerts)</p>
               <input value={f.pocName} onChange={(e) => set("pocName", e.target.value)} required placeholder="Contact name *" className={input} />
               <div className="grid gap-3 sm:grid-cols-2">

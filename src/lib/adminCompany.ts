@@ -66,6 +66,8 @@ export function serializeCompany(c: CompanyWithDocs, jobsCompleted: number) {
   return {
     id: c.id,
     name: c.name,
+    partnerType: c.partnerType,
+    careServices: c.careServices,
     details: c.details,
     email: c.email,
     phone: c.phone,

@@ -20,9 +20,9 @@ export async function GET(req: NextRequest) {
 
   const company = await prisma.inspectionCompany.findUnique({
     where: { id: companyId },
-    select: { active: true, approvalStatus: true },
+    select: { active: true, approvalStatus: true, partnerType: true },
   });
-  if (!company || !company.active || company.approvalStatus !== "approved") {
+  if (!company || !company.active || company.approvalStatus !== "approved" || company.partnerType !== "inspection") {
     return NextResponse.json(
       { error: "Your company is not approved to receive jobs yet." },
       { status: 403 },
