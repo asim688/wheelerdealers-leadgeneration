@@ -34,7 +34,7 @@ export async function POST(
       active: true,
       approvalStatus: true,
       companyId: true,
-      company: { select: { active: true, approvalStatus: true } },
+      company: { select: { active: true, approvalStatus: true, partnerType: true } },
     },
   });
   if (!company || !company.active || company.approvalStatus !== "approved") {
@@ -45,7 +45,7 @@ export async function POST(
   }
   // Inspectors of a multi-tenant company accept on its behalf: same rules.
   if (company.companyId) {
-    if (!company.company?.active || company.company.approvalStatus !== "approved") {
+    if (!company.company?.active || company.company.approvalStatus !== "approved" || company.company.partnerType !== "inspection") {
       return NextResponse.json({ error: "Your company is not approved to accept jobs." }, { status: 403 });
     }
     const gaps = await companyPayoutGaps(company.companyId);

@@ -14,6 +14,7 @@ import {
   SESSION_MAX_AGE,
 } from "@/lib/auth";
 import { rateLimitRequest } from "@/lib/rateLimit";
+import { loginGuard } from "@/lib/sharedRateLimit";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
   const email = (body.email ?? "").trim().toLowerCase();
+  const guard = await loginGuard(req, "partner", email);
+  if (!guard.ok) {
+    return NextResponse.json(
+      { error: "Too many sign-in attempts. Please wait a few minutes and try again." },
+      { status: 429, headers: { "Retry-After": String(guard.retryAfter) } },
+    );
+  }
   const password = body.password ?? "";
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required." }, { status: 400 });

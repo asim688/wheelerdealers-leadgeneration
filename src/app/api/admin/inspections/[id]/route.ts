@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isAdmin } from "@/lib/auth";
 import { getJobOpenHours, notifyCompaniesNewJob } from "@/lib/inspection";
-import { getAdminIdentity } from "@/lib/adminIdentity";
+import { getAdminIdentity, isActiveAdmin } from "@/lib/adminIdentity";
 import { resetSnapshot, snapshotCommission } from "@/lib/ledger";
 import { approveReport } from "@/lib/review";
 import type { Prisma } from "@prisma/client";
@@ -35,7 +34,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   const { id } = await params;

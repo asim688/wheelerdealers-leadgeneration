@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isAdmin } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
 import type { AdminAuction } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
  * seller's contact details and the full bid history so deals can be finalised.
  */
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 

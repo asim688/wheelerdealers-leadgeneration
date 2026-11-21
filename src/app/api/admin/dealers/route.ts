@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isAdmin } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
 
 export const runtime = "nodejs";
 
 /** Lists all dealers with their approval status (admin only). */
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
 /** Approves (or revokes) a dealer (admin only). */
 export async function POST(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 

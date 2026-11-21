@@ -11,6 +11,7 @@ import {
   SESSION_MAX_AGE,
 } from "@/lib/auth";
 import { rateLimitRequest } from "@/lib/rateLimit";
+import { loginGuard } from "@/lib/sharedRateLimit";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -41,6 +42,13 @@ export async function POST(req: NextRequest) {
 
   // Accept `email` (preferred); fall back to `username` for backward-compat.
   const email = (body.email ?? body.username ?? "").trim().toLowerCase();
+  const guard = await loginGuard(req, "admin", email);
+  if (!guard.ok) {
+    return NextResponse.json(
+      { error: "Too many sign-in attempts. Please wait a few minutes and try again." },
+      { status: 429, headers: { "Retry-After": String(guard.retryAfter) } },
+    );
+  }
   const password = body.password ?? "";
 
   // Email is optional for backward-compat: if omitted, only the password is

@@ -9,6 +9,16 @@ export const runtime = "nodejs";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
 const OK_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"];
+const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic" };
+
+/** Detects the real image type from its first bytes, ignoring the client-supplied name and MIME. */
+function sniffImage(b: Buffer): string | null {
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  if (b.subarray(4, 8).toString("latin1") === "ftyp" && ["heic", "heix", "hevc", "hevx", "mif1", "msf1"].includes(b.subarray(8, 12).toString("latin1"))) return "image/heic";
+  return null;
+}
 
 /** Blob is the real store; local disk is a dev-only stand-in so QA can run without it. */
 // Vercel added the store with a "WD_" prefix, so accept both env names.
@@ -17,11 +27,11 @@ const hasBlob = () => Boolean(blobToken());
 const canUseLocalFallback = () => process.env.NODE_ENV !== "production";
 
 /** Writes the upload under public/uploads so the dev server can serve it back. */
-async function storeLocally(file: File, jobCode: string, ext: string): Promise<string> {
+async function storeLocally(bytes: Buffer, jobCode: string, ext: string): Promise<string> {
   const dir = path.join(process.cwd(), "public", "uploads", "inspections", jobCode);
   await fs.mkdir(dir, { recursive: true });
   const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  await fs.writeFile(path.join(dir, name), Buffer.from(await file.arrayBuffer()));
+  await fs.writeFile(path.join(dir, name), bytes);
   return `/uploads/inspections/${jobCode}/${name}`;
 }
 
@@ -76,6 +86,11 @@ export async function POST(
   if (file.size === 0 || file.size > MAX_BYTES) {
     return NextResponse.json({ error: "Image must be a non-empty file under 8 MB." }, { status: 413 });
   }
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const contentType = sniffImage(bytes);
+  if (!contentType) {
+    return NextResponse.json({ error: "Please upload a JPG, PNG or WebP image." }, { status: 415 });
+  }
 
   let itemId: string | null = null;
   if (itemKey) {
@@ -87,16 +102,17 @@ export async function POST(
   }
 
   try {
-    const ext = file.name.split(".").pop() || "jpg";
+    const ext = EXT[contentType];
     const url = hasBlob()
       ? (
-          await put(`inspections/${job.jobCode}/${Date.now()}.${ext}`, file, {
+          await put(`inspections/${job.jobCode}/${Date.now()}.${ext}`, bytes, {
             access: "public",
+            contentType,
             addRandomSuffix: true,
             token: blobToken(),
           })
         ).url
-      : await storeLocally(file, job.jobCode, ext);
+      : await storeLocally(bytes, job.jobCode, ext);
     const photo = await prisma.inspectionPhoto.create({
       data: { jobId: job.id, itemId, url, caption },
     });

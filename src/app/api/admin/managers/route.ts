@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { hashPassword, isAdmin } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
+import { hashPassword } from "@/lib/auth";
 import { normaliseEmail, normaliseUaeMobile } from "@/lib/contactValidation";
 import { sendManagerAddedEmail } from "@/lib/companyCompliance";
 
@@ -8,7 +9,7 @@ export const runtime = "nodejs";
 
 /** GET /api/admin/managers — Account Managers with their assigned companies and pending reviews. */
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (!(await isActiveAdmin(req))) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const [managers, companies] = await Promise.all([
     prisma.accountManager.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
 
 /** POST /api/admin/managers — create an Account Manager { name, email, phone, password, companyIds? }. */
 export async function POST(req: NextRequest) {
-  if (!isAdmin(req)) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (!(await isActiveAdmin(req))) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   let body: { name?: string; email?: string; phone?: string; password?: string; companyIds?: unknown };
   try {
     body = await req.json();

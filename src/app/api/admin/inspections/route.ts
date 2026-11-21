@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isAdmin } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
 import type { Prisma } from "@prisma/client";
 
 export const runtime = "nodejs";
@@ -26,7 +26,7 @@ const STATUSES = [
  * or — for jobs assigned to an inspector directly — that inspector's company.
  */
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 

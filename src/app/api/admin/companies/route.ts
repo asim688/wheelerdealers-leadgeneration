@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isAdmin } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
 import { COMPANY_INCLUDE, serializeCompany } from "@/lib/adminCompany";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export const runtime = "nodejs";
  * inspectors count, jobs assigned (accepted by the company) vs completed.
  */
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 

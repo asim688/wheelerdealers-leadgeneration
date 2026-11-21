@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isAdmin } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
 import type { AdminMarketListing } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ const SORTABLE = new Set(["createdAt", "priceAed", "year", "make", "mileageKm"])
  *   page / pageSize (max 100)
  */
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 

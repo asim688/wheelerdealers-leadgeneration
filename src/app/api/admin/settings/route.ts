@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdmin } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
 import {
   getInspectionPricing,
   setInspectionPricing,
@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  * Commission is derived: customerPrice − partnerPayout.
  */
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   const pricing = await getInspectionPricing();
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
  * { customerPrice?: number, partnerPayout?: number, jobOpenHours?: number }
  */
 export async function PATCH(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   let body: { customerPrice?: number; partnerPayout?: number; jobOpenHours?: number };

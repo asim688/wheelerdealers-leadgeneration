@@ -11,9 +11,10 @@ async function requireApprovedCompany(req: NextRequest) {
   if (!companyId) return null;
   const company = await prisma.inspectionCompany.findUnique({
     where: { id: companyId },
-    select: { id: true, name: true, active: true, approvalStatus: true },
+    select: { id: true, name: true, active: true, approvalStatus: true, partnerType: true },
   });
-  if (!company || !company.active || company.approvalStatus !== "approved") return null;
+  // Care (towing/roadside) partners have no inspectors and must never reach inspection jobs.
+  if (!company || !company.active || company.approvalStatus !== "approved" || company.partnerType !== "inspection") return null;
   return company;
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isAdmin, hashPassword } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
+import { hashPassword } from "@/lib/auth";
 import { normaliseEmail, normaliseUaeMobile } from "@/lib/contactValidation";
 import { sendInspectorAddedEmail } from "@/lib/companyCompliance";
 
@@ -8,7 +9,7 @@ export const runtime = "nodejs";
 
 /** GET /api/admin/inspectors — roster with active jobs count (admin only). */
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   const inspectors = await prisma.inspector.findMany({
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
 
 /** POST /api/admin/inspectors — create an inspector (admin only). */
 export async function POST(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   let body: { name?: string; email?: string; password?: string; phone?: string };

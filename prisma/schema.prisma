@@ -882,3 +882,13 @@ model CareOrder {
 
   @@index([status, createdAt])
 }
+
+/// Shared login rate-limit counters (fixed window), so limits hold across all
+/// serverless instances. Keys look like "login-ip:<name>:<ip>" or "login-acct:<email>".
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime
+
+  @@index([resetAt])
+}

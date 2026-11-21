@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { hashPassword, isAdmin } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
+import { hashPassword } from "@/lib/auth";
 import { normaliseUaeMobile } from "@/lib/contactValidation";
 
 export const runtime = "nodejs";
@@ -11,7 +12,7 @@ export const runtime = "nodejs";
  * manager, so assigning moves it from any previous manager).
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAdmin(req)) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (!(await isActiveAdmin(req))) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const { id } = await params;
   const existing = await prisma.accountManager.findUnique({ where: { id }, select: { id: true, phone: true } });
   if (!existing) return NextResponse.json({ error: "Account manager not found." }, { status: 404 });

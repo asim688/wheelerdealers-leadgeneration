@@ -18,3 +18,8 @@ export async function getAdminIdentity(req: NextRequest): Promise<AdminIdentity 
   if (!u || !u.active) return null; // deactivated staff lose access immediately
   return { id: u.id, name: u.name, email: u.email, staff: true };
 }
+
+/** Admin guard for API routes: owner login, or a staff login that is still active. */
+export async function isActiveAdmin(req: NextRequest): Promise<boolean> {
+  return (await getAdminIdentity(req)) !== null;
+}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isActiveAdmin } from "@/lib/adminIdentity";
 import { refreshStaleMarketPrices } from "@/lib/marketData";
-import { isAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 // Allow a generous window — refreshing many vehicles can take a while.
@@ -21,7 +21,7 @@ async function handle(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const authHeader = req.headers.get("authorization");
   const authorized =
-    (secret && authHeader === `Bearer ${secret}`) || isAdmin(req);
+    (secret && authHeader === `Bearer ${secret}`) || (await isActiveAdmin(req));
 
   if (!authorized) {
     return NextResponse.json({ error: "Not authorized" }, { status: 401 });

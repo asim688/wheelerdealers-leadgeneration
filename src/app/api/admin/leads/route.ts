@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isAdmin } from "@/lib/auth";
+import { isActiveAdmin } from "@/lib/adminIdentity";
 import type { AdminLead } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -27,7 +27,7 @@ const SORTABLE = new Set(["createdAt", "estimateMin", "year", "make", "name"]);
  *   pageSize   default 20 (max 100)
  */
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -159,7 +159,7 @@ export async function GET(req: NextRequest) {
  * Body: { ids: string[] }. Cascades to the lead's auction + bids first.
  */
 export async function DELETE(req: NextRequest) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 

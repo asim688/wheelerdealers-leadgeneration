@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isAdmin } from "@/lib/auth";
-import { getAdminIdentity } from "@/lib/adminIdentity";
+import { getAdminIdentity, isActiveAdmin } from "@/lib/adminIdentity";
 import { missingDocs, payoutGaps, sendCompanyWelcomeEmail } from "@/lib/companyCompliance";
 import {
   ASSIGNED_STATUSES,
@@ -25,7 +24,7 @@ const APPROVAL_STATUSES = ["pending", "approved", "suspended"];
  * verified, suspended or reinstated it.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   const { id } = await params;
@@ -131,7 +130,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!isAdmin(req)) {
+  if (!(await isActiveAdmin(req))) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   const { id } = await params;
